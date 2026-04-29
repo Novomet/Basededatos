@@ -19,12 +19,7 @@ load_dotenv()  # ✅ Carga el .env al iniciar
 app = Flask(__name__)
 
 # ✅ Permite peticiones desde Live Server (5500) y cualquier origen local
-CORS(app, origins=[
-    "http://127.0.0.1:5500",
-    "http://localhost:5500",
-    "http://127.0.0.1:5000",
-    "http://localhost:5000",
-])
+CORS(app)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
