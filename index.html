@@ -1,0 +1,3320 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Well Controller</title>
+  <style>
+    :root {
+      --bg: #0b1118;
+      --panel: #111a24;
+      --panel-2: #152230;
+      --card: #0f1722;
+      --card-soft: #131e2b;
+      --primary: #00c2ff;
+      --primary-2: #17d1a8;
+      --text: #d8e5f2;
+      --muted: #8ea3b7;
+      --border: #243649;
+      --border-soft: #1d2d3f;
+      --success: #15b97d;
+      --warning: #e2a93b;
+      --danger: #e05d5d;
+      --shadow: 0 16px 35px rgba(0, 0, 0, 0.28);
+      --radius: 16px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+    }
+
+    body {
+      background: linear-gradient(180deg, #091018 0%, #0d1621 100%);
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      min-height: 100vh;
+    }
+
+    
+    .sidebar {
+      background: linear-gradient(180deg, #0b131c 0%, #0e1823 100%);
+      color: white;
+      padding: 32px 24px;
+      border-right: 1px solid #1e2d3d;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+  
+    .main-content {
+      margin-left: 250px;
+      transition: 0.3s;
+    }
+
+    .sidebar.collapsed ~ .main-content {
+      margin-left: 70px;
+    }
+    .sidebar {
+      width: 250px;
+      transition: all 0.3s ease;
+      overflow: hidden;
+    }
+
+    /* Sidebar colapsado */
+    .sidebar.collapsed {
+      width: 70px;
+    }
+
+    /* Ocultar texto cuando está colapsado */
+    .sidebar.collapsed .menu-text {
+      display: none;
+    }
+
+    /* Centrar íconos */
+    .sidebar.collapsed .menu-item {
+      justify-content: center;
+    }
+
+    /* Botón */
+    .toggle-btn {
+      position: absolute;
+      top: 15px;
+      left: 260px;
+      background: #0f172a;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: 0.3s;
+    }
+
+    .sidebar.collapsed + .toggle-btn {
+      left: 80px;
+    }
+
+    .brand {
+      font-size: 1.35rem;
+      font-weight: 600;
+      margin-bottom: 4px;
+      color: #f0f8ff;
+      letter-spacing: -0.5px;
+    }
+
+    .brand-sub {
+      font-size: 0.8rem;
+      color: #91a9c1;
+      margin-bottom: 32px;
+      font-weight: 400;
+    }
+
+    .menu {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex: 1;
+    }
+    .logout-btn {
+      margin-top: auto;
+
+      background: linear-gradient(135deg, #ff4d4d, #cc0000) !important;
+      color: white !important;
+      border: none !important;
+      padding: 12px 14px;
+      border-radius: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .logout-btn:hover {
+      background: linear-gradient(135deg, #ff6666, #e60000) !important;
+    }
+
+    .menu button {
+      border: 1px solid transparent;
+      background: rgba(255,255,255,0.02);
+      color: #c4d5e6;
+      text-align: left;
+      padding: 12px 14px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+
+    .menu button::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      border-radius: 0 3px 3px 0;
+      background: transparent;
+      transition: background 0.2s ease;
+    }
+
+    .menu button:hover {
+      background: rgba(0,194,255,0.08);
+      border-color: #1f3a52;
+      color: #e8f4ff;
+      transform: translateX(2px);
+    }
+
+    .menu button.active {
+      background: linear-gradient(90deg, rgba(0,194,255,0.12), rgba(23,209,168,0.08));
+      border-color: #2a4d6a;
+      color: #fff;
+    }
+
+    .menu button.active::before {
+      background: #00c2ff;
+    }
+
+    /* ===== MAIN CONTENT ===== */
+    .content {
+      padding: 32px 36px;
+      overflow-y: auto;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 28px;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+
+    .title h1 {
+      font-size: 1.75rem;
+      font-weight: 600;
+      color: #f0f8ff;
+      margin-bottom: 4px;
+      letter-spacing: -0.5px;
+    }
+
+    .title p {
+      color: #91a9c1;
+      font-size: 0.9rem;
+      font-weight: 400;
+    }
+
+    .search input {
+      width: 280px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid #213343;
+      outline: none;
+      background: #0d1620;
+      color: #d8e5f2;
+      font-size: 0.9rem;
+      transition: all 0.2s ease;
+    }
+
+    .search input:focus {
+      border-color: #2fa8d7;
+      box-shadow: 0 0 0 3px rgba(0,194,255,0.1);
+    }
+
+    .search input::placeholder {
+      color: #6d8599;
+    }
+
+    /* ===== SECTIONS ===== */
+    .module-section {
+      display: none;
+      animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .module-section.active {
+      display: block;
+    }
+
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+    }
+
+    .section-header h2 {
+      color: #f0f8ff;
+      font-size: 1.5rem;
+      font-weight: 600;
+      letter-spacing: -0.3px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      border: 1px solid #2a3d52;
+      border-radius: 10px;
+      padding: 10px 16px;
+      cursor: pointer;
+      font-weight: 500;
+      font-size: 0.9rem;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.16);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #00c2ff 0%, #00a8d8 100%);
+      color: #030a10;
+      border: none;
+      font-weight: 600;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: linear-gradient(135deg, #00d9ff 0%, #00bfef 100%);
+    }
+
+    .btn-secondary {
+      background: rgba(255,255,255,0.03);
+      color: #c4d5e6;
+      border: 1px solid #243649;
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: rgba(255,255,255,0.06);
+      border-color: #2a4d6a;
+    }
+
+    /* ===== CARDS & DASHBOARD ===== */
+    .dashboard {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      margin-bottom: 28px;
+    }
+
+    .card {
+      background: linear-gradient(135deg, #0f1722 0%, #121d29 100%);
+      border-radius: var(--radius);
+      padding: 24px;
+      border: 1px solid #1a2d3f;
+      transition: all 0.2s ease;
+    }
+
+    .card:hover {
+      border-color: #2a4055;
+      box-shadow: 0 8px 24px rgba(0,194,255,0.08);
+    }
+
+    .metric-title {
+      color: #91a9c1;
+      font-size: 0.85rem;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      font-weight: 500;
+    }
+
+    .metric-value {
+      font-size: 2.2rem;
+      font-weight: 600;
+      color: #f0f8ff;
+      margin-bottom: 8px;
+      letter-spacing: -1px;
+    }
+    .metric-running {
+      color: #52dfa8;
+      text-shadow: 0 0 12px rgba(82, 223, 168, 0.18);
+    }
+
+    .metric-stop {
+      color: #ff7b7b;
+      text-shadow: 0 0 12px rgba(255, 123, 123, 0.18);
+    }
+
+    .metric-pulled {
+      color: #f0bd54;
+      text-shadow: 0 0 12px rgba(240, 189, 84, 0.18);
+    }
+
+    .metric-note {
+      font-size: 0.85rem;
+      color: #6d8599;
+      font-weight: 400;
+    }
+
+    .small-cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    .small-card h3 {
+      color: #f0f8ff;
+      margin-bottom: 10px;
+      font-size: 1rem;
+      font-weight: 600;
+    }
+
+    .small-card p {
+      color: #91a9c1;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      font-weight: 400;
+    }
+
+    /* ===== TABLES ===== */
+    .table-wrap {
+      overflow-x: auto;
+      border-radius: 12px;
+      border: 1px solid #1a2d3f;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th, td {
+      padding: 12px 14px;
+      border-bottom: 1px solid #1a2d3f;
+      text-align: left;
+      font-size: 0.9rem;
+    }
+
+    th {
+      color: #91a9c1;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      font-weight: 600;
+      background: rgba(0,0,0,0.2);
+    }
+
+    td {
+      color: #d8e5f2;
+      font-weight: 400;
+    }
+
+    tbody tr:hover td {
+      background: rgba(0,194,255,0.04);
+    }
+
+    .status {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    .status-ok { background: rgba(21,185,125,0.15); color: #52dfa8; }
+    .status-warn { background: rgba(226,169,59,0.15); color: #f0bd54; }
+    .status-stop { background: rgba(224,93,93,0.15); color: #ff9a9a; }
+
+    /* ===== POZOS MODULE ===== */
+    .pozos-industrial-wrap {
+      background: transparent;
+      border: none;
+      border-radius: var(--radius);
+      padding: 0;
+    }
+
+    .pozos-industrial-top {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 40px;
+      margin-bottom: 36px;
+      align-items: stretch; /* 👈 ESTO ES LA CLAVE */
+    }
+
+    .industrial-card {
+      background: linear-gradient(135deg, #0f1722 0%, #111b28 100%);
+      border: 1px solid #1a2d3f;
+      border-radius: 14px;
+      padding: 40px;
+      transition: all 0.2s ease;
+      min-height: 460px; /* 👈 hace más grandes los cuadros */
+      height: 100%; /* 👈 IMPORTANTE */
+    }
+
+    .industrial-card:hover {
+      border-color: #2a4055;
+      background: linear-gradient(135deg, #111d2a 0%, #141f2d 100%);
+    }
+
+    .industrial-card-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #f0f8ff;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 2px solid #1a2d3f;
+      letter-spacing: 0.2px;
+    }
+
+    .industrial-card-title::after {
+      content: "";
+      width: 48px;
+      height: 2px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #00c2ff 0%, #17d1a8 100%);
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+
+    .industrial-card:hover .industrial-card-title::after {
+      opacity: 1;
+    }
+
+    .industrial-form {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      flex: 1; /* 👈 esto hace que llene el card */
+    }
+
+    .industrial-field {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 14px;
+      align-items: center;
+    }
+
+    .industrial-field label {
+      font-size: 0.85rem;
+      color: #91a9c1;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.2px;
+      padding-top: 4px;
+    }
+
+    .industrial-field input,
+    .industrial-field select,
+    .industrial-field textarea {
+      width: 100%;
+      border: 1px solid #1a2d3f;
+      background: rgba(11,20,30,0.6);
+      color: #e8f4ff;
+      border-radius: 10px;
+      padding: 14px 16px;
+      outline: none;
+      min-height: 52px;
+      transition: all 0.2s ease;
+      font-size: 0.95rem;
+      font-weight: 400;
+    }
+
+    .industrial-field input:focus,
+    .industrial-field select:focus,
+    .industrial-field textarea:focus {
+      border-color: #00c2ff;
+      box-shadow: 0 0 0 3px rgba(0,194,255,0.1);
+      background: rgba(11,20,30,0.8);
+    }
+
+    .industrial-field textarea {
+      min-height: 110px;
+      resize: vertical;
+    }
+
+    .industrial-field.block {
+      grid-template-columns: 1fr;
+    }
+
+    .industrial-search-box {
+      display: grid;
+      gap: 18px;
+      margin-bottom: 10px;
+    }
+
+    .industrial-status-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .industrial-status-chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 120px;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      border: 1px solid transparent;
+      text-transform: uppercase;
+      transition: all 0.2s ease;
+    }
+
+    .chip-running {
+      background: rgba(21,185,125,0.15);
+      color: #52dfa8;
+      border-color: rgba(21,185,125,0.3);
+    }
+
+    .chip-stop {
+      background: rgba(224,93,93,0.15);
+      color: #ff9a9a;
+      border-color: rgba(224,93,93,0.3);
+    }
+
+    .chip-pulled {
+      background: rgba(226,169,59,0.15);
+      color: #f0bd54;
+      border-color: rgba(226,169,59,0.3);
+    }
+
+    .pozos-industrial-bottom {
+      display: grid;
+      gap: 32px;
+    }
+    .pozos-industrial-top {
+      display: grid;
+      grid-template-columns: repeat(4, 350px); /* ancho fijo */
+      gap: 30px;
+      overflow-x: auto; /* 👈 permite scroll horizontal */
+      padding-bottom: 10px;
+    }
+
+    .industrial-table-card {
+      background: linear-gradient(135deg, #0f1722 0%, #111b28 100%);
+      border: 1px solid #1a2d3f;
+      border-radius: 14px;
+      padding: 28px;
+    }
+
+    .industrial-table-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #f0f8ff;
+      margin-bottom: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 14px;
+      border-bottom: 2px solid #1a2d3f;
+    }
+
+    .industrial-grid {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 10px;
+      border: 1px solid #1a2d3f;
+    }
+
+    .industrial-grid thead th {
+      background: rgba(0,0,0,0.3);
+      color: #91a9c1;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      padding: 16px 14px;
+      border-bottom: 1px solid #1a2d3f;
+    }
+
+    .industrial-grid tbody td {
+      background: transparent;
+      color: #d8e5f2;
+      padding: 16px 14px;
+      border-bottom: 1px solid #1a2d3f;
+      font-size: 0.9rem;
+      font-weight: 400;
+    }
+
+    .industrial-grid tbody tr:hover td {
+      background: rgba(0,194,255,0.04);
+    }
+
+    .industrial-comments-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 28px;
+      margin-top: 32px;
+    }
+
+    .industrial-comment-card {
+      background: linear-gradient(135deg, #0f1722 0%, #111b28 100%);
+      border: 1px solid #1a2d3f;
+      border-radius: 14px;
+      padding: 28px;
+    }
+
+    .industrial-comment-card h4 {
+      font-size: 0.95rem;
+      color: #f0f8ff;
+      margin-bottom: 16px;
+      font-weight: 600;
+      padding-bottom: 12px;
+      border-bottom: 2px solid #1a2d3f;
+    }
+
+    .industrial-comment-card textarea {
+      width: 100%;
+      min-height: 160px;
+      border: 1px solid #1a2d3f;
+      background: rgba(11,20,30,0.6);
+      color: #e8f4ff;
+      border-radius: 10px;
+      padding: 14px;
+      resize: vertical;
+      outline: none;
+      transition: all 0.2s ease;
+      line-height: 1.6;
+      font-size: 0.9rem;
+    }
+
+    .industrial-comment-card textarea:focus {
+      border-color: #00c2ff;
+      box-shadow: 0 0 0 3px rgba(0,194,255,0.1);
+    }
+
+    .industrial-info-banner {
+      margin-top: 32px;
+      background: rgba(0,194,255,0.08);
+      color: #a9dff4;
+      border: 1px solid rgba(0,194,255,0.2);
+      border-radius: 10px;
+      padding: 18px 20px;
+      font-size: 0.92rem;
+      font-weight: 400;
+      line-height: 1.6;
+    }
+
+    /* ===== CARGA MODULE ===== */
+    .carga-module-grid {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+
+    .carga-panel-title {
+      color: #f0f8ff;
+      font-size: 1.05rem;
+      margin-bottom: 18px;
+      font-weight: 600;
+    }
+
+    .carga-buttons-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .carga-action-btn {
+      width: 100%;
+      text-align: left;
+      padding: 14px 16px;
+      border-radius: 10px;
+      border: 1px solid #1a2d3f;
+      background: rgba(15,23,34,0.6);
+      color: #d8e5f2;
+      font-weight: 600;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .carga-action-btn:hover:not(:disabled) {
+      background: rgba(0,194,255,0.1);
+      border-color: #2a4055;
+      transform: translateX(2px);
+    }
+
+    .carga-action-btn.active {
+      background: linear-gradient(135deg, rgba(0,194,255,0.15), rgba(23,209,168,0.1));
+      border-color: #2a4055;
+      color: #f0f8ff;
+    }
+
+    .carga-action-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .carga-action-btn .btn-number {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      background: rgba(0,194,255,0.12);
+      color: #00c2ff;
+      font-size: 0.8rem;
+      font-weight: 700;
+      border: 1px solid rgba(0,194,255,0.2);
+      flex-shrink: 0;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .field label {
+      font-size: 0.85rem;
+      color: #91a9c1;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.2px;
+    }
+
+    .field input,
+    .field select,
+    .field textarea {
+      border: 1px solid #1a2d3f;
+      border-radius: 10px;
+      padding: 10px 12px;
+      outline: none;
+      background: rgba(11,20,30,0.6);
+      color: #d8e5f2;
+      font-size: 0.9rem;
+      transition: all 0.2s ease;
+    }
+
+    .field input:focus,
+    .field select:focus,
+    .field textarea:focus {
+      border-color: #00c2ff;
+      box-shadow: 0 0 0 3px rgba(0,194,255,0.1);
+      background: rgba(11,20,30,0.8);
+    }
+
+    .carga-info-box {
+      margin-top: 16px;
+      padding: 16px;
+      border-radius: 10px;
+      background: rgba(0,194,255,0.05);
+      border: 1px solid rgba(0,194,255,0.15);
+      min-height: 100px;
+    }
+
+    .carga-info-box h4 {
+      color: #f0f8ff;
+      margin-bottom: 8px;
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+
+    .carga-info-box p {
+      color: #91a9c1;
+      line-height: 1.5;
+      font-size: 0.9rem;
+      font-weight: 400;
+    }
+
+    .subidas-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .subidas-header h3 {
+      color: #f0f8ff;
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+
+    .subidas-note {
+      color: #91a9c1;
+      font-size: 0.85rem;
+      margin-bottom: 12px;
+      font-weight: 400;
+    }
+
+    .estado-importacion {
+      margin-top: 14px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      display: none;
+      font-weight: 500;
+    }
+
+    .estado-importacion.success {
+      display: block;
+      background: rgba(21,185,125,0.15);
+      color: #52dfa8;
+      border: 1px solid rgba(21,185,125,0.3);
+    }
+
+    .estado-importacion.error {
+      display: block;
+      background: rgba(224,93,93,0.15);
+      color: #ff9a9a;
+      border: 1px solid rgba(224,93,93,0.3);
+    }
+
+    .estado-importacion.info {
+      display: block;
+      background: rgba(0,194,255,0.12);
+      color: #85dfff;
+      border: 1px solid rgba(0,194,255,0.25);
+    }
+
+    /* ===== STOP MODULE ===== */
+    .stop-module-wrap {
+      display: grid;
+      gap: 18px;
+    }
+
+    .stop-search-card,
+    .stop-main-card {
+      background: linear-gradient(135deg, #0f1722 0%, #111b28 100%);
+      border: 1px solid #1a2d3f;
+      border-radius: 16px;
+      padding: 22px;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+    }
+
+    .stop-search-card:hover,
+    .stop-main-card:hover {
+      border-color: #2a4055;
+      box-shadow: 0 12px 28px rgba(0, 194, 255, 0.08);
+    }
+
+    .stop-card-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #f0f8ff;
+      margin-bottom: 18px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid #1a2d3f;
+      position: relative;
+    }
+
+    .stop-card-title::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      bottom: -2px;
+      width: 58px;
+      height: 2px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #00c2ff 0%, #17d1a8 100%);
+    }
+
+    .stop-search-grid {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr 1fr 1fr 1fr;
+      gap: 14px;
+      align-items: end;
+    }
+
+    .stop-form {
+      display: grid;
+      gap: 14px;
+    }
+
+    .stop-form.two-columns {
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px 18px;
+    }
+
+    .stop-field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .stop-field.full {
+      grid-column: 1 / -1;
+    }
+
+    .stop-field.span-2 {
+      grid-column: span 2;
+    }
+
+    .stop-field label {
+      font-size: 0.84rem;
+      color: #91a9c1;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.2px;
+    }
+
+    .stop-field input,
+    .stop-field select,
+    .stop-field textarea {
+      border: 1px solid #1a2d3f;
+      border-radius: 10px;
+      padding: 11px 12px;
+      outline: none;
+      background: rgba(11,20,30,0.68);
+      color: #d8e5f2;
+      font-size: 0.92rem;
+      transition: all 0.2s ease;
+    }
+
+    .stop-field input:focus,
+    .stop-field select:focus,
+    .stop-field textarea:focus {
+      border-color: #00c2ff;
+      box-shadow: 0 0 0 3px rgba(0,194,255,0.10);
+      background: rgba(11,20,30,0.82);
+    }
+
+    .stop-field textarea {
+      min-height: 115px;
+      resize: vertical;
+      line-height: 1.5;
+    }
+    .stop-card,
+    .stop-card-search,
+    .stop-card-main {
+      background: linear-gradient(135deg, #0f1722 0%, #111b28 100%);
+      border: 1px solid #1a2d3f;
+      border-radius: 16px;
+      padding: 22px;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+    }
+    .stop-card {
+      margin-bottom: 20px; /* 👈 separa cada card */
+    }
+
+    .stop-main-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 18px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid #1a2d3f;
+      position: relative;
+    }
+
+    .stop-main-header::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      bottom: -2px;
+      width: 58px;
+      height: 2px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #00c2ff 0%, #17d1a8 100%);
+    }
+
+    .stop-main-header h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #f0f8ff;
+      margin: 0;
+    }
+    .stop-container {
+      background: linear-gradient(145deg, #09131c, #0f2230);
+      border: 1px solid #243b53;
+      border-radius: 18px;
+      padding: 22px;
+      box-shadow:
+        inset 0 0 0 1px rgba(0, 194, 255, 0.05),
+        0 10px 25px rgba(0, 0, 0, 0.4);
+      margin-top: 10px;
+    }
+
+    .stop-save-btn {
+      background: linear-gradient(135deg, #17d1a8 0%, #109e81 100%);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      padding: 11px 18px;
+      font-size: 0.92rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .stop-save-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 18px rgba(23, 209, 168, 0.22);
+    }
+
+    .stop-foot-note {
+      margin-top: 10px;
+      color: #67c7ff;
+      font-size: 0.85rem;
+    }
+
+    @media (max-width: 1400px) {
+      .stop-search-grid {
+        grid-template-columns: repeat(3, 1fr);
+      }
+
+      .stop-form.two-columns {
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
+
+    @media (max-width: 1100px) {
+      .stop-search-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .stop-form.two-columns {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 820px) {
+      .stop-search-grid,
+      .stop-form.two-columns {
+        grid-template-columns: 1fr;
+      }
+
+      .stop-field.span-2,
+      .stop-field.full {
+        grid-column: auto;
+      }
+
+      .stop-main-header {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .stop-save-btn {
+        width: 100%;
+      }
+    }
+
+    /* ===== RESPONSIVE ===== */
+    @media (max-width: 1400px) {
+      .pozos-industrial-top {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+        @media (max-width: 1350px) {
+      .stop-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 820px) {
+      .stop-form.two-columns {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 1250px) {
+      .industrial-comments-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .dashboard,
+      .small-cards {
+        grid-template-columns: 1fr;
+      }
+
+      .carga-module-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 820px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        padding: 20px 16px;
+      }
+
+      .content {
+        padding: 20px;
+      }
+
+      .pozos-industrial-top {
+        grid-template-columns: 1fr;
+      }
+
+      .industrial-field {
+        grid-template-columns: 1fr;
+      }
+
+      .topbar {
+        flex-direction: column;
+      }
+
+      .search input {
+        width: 100%;
+      }
+
+      .carga-module-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  
+    <div id="loginScreen" style="
+      position:fixed;
+      top:0; left:0;
+      width:100%; height:100%;
+      background:#0b1118;
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      flex-direction:column; /* 👈 IMPORTANTE */
+      z-index:9999;
+    ">
+
+      <!-- LOGO FUERA DEL CUADRO -->
+      <img src="2018_08_06_Novomet_Logo.png" alt="Logo"
+        style="width:420px; margin-bottom:20px;" />
+
+      <!-- CUADRO LOGIN -->
+      <div style="
+        background:#111a24;
+        padding:30px;
+        border-radius:12px;
+        width:300px;
+        text-align:center;
+        border:1px solid #243649;
+  ">
+      
+
+      <h2 style="color:#fff; margin-bottom:20px;">¡Bienvenido!</h2>
+
+      <input id="loginUser" type="text" placeholder="Usuario"
+        style="width:100%; padding:10px; margin-bottom:10px; border-radius:8px; border:none;" />
+
+      <input id="loginPass" type="password" placeholder="Contraseña"
+        style="width:100%; padding:10px; margin-bottom:15px; border-radius:8px; border:none;" />
+
+      <button onclick="login()"
+        style="width:100%; padding:10px; background:#00c2ff; border:none; border-radius:8px; cursor:pointer;">
+        Ingresar
+      </button>
+
+      <p id="loginError" style="color:red; margin-top:10px; display:none;">Credenciales incorrectas</p>
+    </div>
+  </div>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">Well Controller</div>
+      
+
+      <div class="menu">
+        <button class="tab-btn active" data-tab="dashboard">Inicio</button>
+        <button class="tab-btn" data-tab="pozos">Pozos</button>
+        <button class="tab-btn" data-tab="carga">Carga</button>
+        <button class="tab-btn" data-tab="stop">Stop</button>
+        <button class="tab-btn" data-tab="edicion">Edición</button>
+        <button id="btnLogout" class="logout-btn">Cerrar sesión</button>
+      </div>
+    </aside>
+
+    <main class="content">
+      <div class="topbar">
+        <div class="title">
+        </div>
+        <div class="search">
+          
+        </div>
+      </div>
+
+      <section id="dashboard" class="module-section active">
+        <div class="dashboard">
+          <div class="card">
+            <div class="metric-title">Pozos registrados</div>
+            <div class="metric-value" id="metricPozos">--</div>
+            <div class="metric-note">Total de pozos disponibles</div>
+          </div>
+          <div class="card">
+            <div class="metric-title">Módulo Pozos</div>
+            <div class="metric-value">ONLINE</div>
+            <div class="metric-note">Consulta conectada a la base</div>
+          </div>
+          <div class="card">
+            <div class="metric-title">Estado API</div>
+            <div class="metric-value" id="metricApi">...</div>
+            <div class="metric-note">Backend Flask</div>
+          </div>
+        </div>
+
+        <div class="small-cards">
+          <div class="card small-card" onclick="cargarTablaCliente()">
+            <h3>Pozos Running</h3>
+            <div class="metric-value metric-running" id="metricRunning">--</div>
+            <p>Total de pozos operando actualmente.</p>
+          </div>
+
+          <div class="card small-card card-stop" onclick="cargarTablaStatus()">
+            <h3>Pozos Stop</h3>
+            <div class="metric-value metric-stop" id="metricStop">--</div>
+            <p>Pozos con parada registrada y sin fecha de arranque.</p>
+          </div>
+
+          <div class="card small-card card-pulled" onclick="cargarTablaPulled()">
+            <h3>Pozos Pulled</h3>
+            <div class="metric-value metric-pulled" id="metricPulled">--</div>
+            <p>Pozos pulled.</p>
+          </div>
+        </div>
+        <div class="table-wrap" style="margin-top:20px;">
+          <table id="tablaCliente" style="display:none;">
+            <thead>
+              <tr>
+                <th>POZO</th>
+                <th>INSTALACIÓN</th>
+                <th>CLIENTE</th>
+                <th>BLOQUE</th>
+                <th>CAMPO</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="table-wrap" style="margin-top:20px;">
+          <table id="tablaStatus" style="display:none;">
+            <thead>
+              <tr>
+                <th>POZO</th>
+                <th>INSTALACIÓN</th>
+                <th>STOP DATE</th>
+                <th>RAZÓN STOP</th>
+                <th>START DATE</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="table-wrap" style="margin-top:20px;">
+          <table id="tablaPulled" style="display:none;">
+            <thead>
+              <tr>
+                <th>POZO</th>
+                <th>FECHA INICIO</th>
+                <th>FECHA PARADA</th>
+                <th># PULL</th>
+                <th>RAZÓN</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="pozos" class="module-section">
+        <div class="section-header">
+          
+          <div class="actions">
+          </div>
+        </div>
+
+        <div class="pozos-industrial-wrap">
+          <div class="pozos-industrial-top">
+            <div class="industrial-card">
+              <div class="industrial-card-title">Datos del Pozo</div>
+
+              <div class="industrial-form">
+                <div class="industrial-search-box">
+                  <div class="industrial-field">
+                    <label for="txtBuscarPozoWeb">Buscar</label>
+                    <input type="text" id="txtBuscarPozoWeb" placeholder="Escribe el nombre del pozo..." />
+                  </div>
+
+                  <div class="industrial-field">
+                    <label for="cmbPozoWeb">Pozo</label>
+                    <select id="cmbPozoWeb">
+                      <option value="">Seleccionar</option>
+                    </select>
+                  </div>
+
+                  <div class="industrial-field">
+                    <label for="cmbPozoFWeb">Pozo (F)</label>
+                    <select id="cmbPozoFWeb">
+                      <option value="">Seleccionar</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="industrial-field">
+                  <label for="pozoCliente">Cliente</label>
+                  <input type="text" id="pozoCliente" readonly />
+                </div>
+
+                <div class="industrial-field">
+                  <label for="pozoBloque">Bloque</label>
+                  <input type="text" id="pozoBloque" readonly />
+                </div>
+
+                <div class="industrial-field">
+                  <label for="pozoCampo">Campo</label>
+                  <input type="text" id="pozoCampo" readonly />
+                </div>
+
+                <div class="industrial-field">
+                  <label for="pozoArena">Arena</label>
+                  <input type="text" id="pozoArena" readonly />
+                </div>
+              </div>
+            </div>
+
+            <div class="industrial-card">
+              <div class="industrial-card-title">Resumen Operativo</div>
+
+              <div class="industrial-form">
+                <div class="industrial-field">
+                  <label>Status</label>
+                  <div class="industrial-status-row">
+                    <span id="pozoStatusChip" class="industrial-status-chip chip-running">RUNNING</span>
+                  </div>
+                </div>
+
+                <div class="industrial-field">
+                  <label for="pozoStop">Stop</label>
+                  <input type="text" id="pozoStop" readonly />
+                </div>
+
+                <div class="industrial-field">
+                  <label for="pozoContrato">Contrato</label>
+                  <input type="text" id="pozoContrato" readonly />
+                </div>
+
+                <div class="industrial-field">
+                  <label for="pozoRunLife">Run Life</label>
+                  <input type="text" id="pozoRunLife" readonly />
+                </div>
+
+                <div class="industrial-field">
+                  <label for="pozoArranque">Arranque</label>
+                  <input type="text" id="pozoArranque" readonly />
+                </div>
+              </div>
+            </div>
+
+            <div class="industrial-card">
+              <div class="industrial-card-title">Información Stop</div>
+
+              <div class="industrial-form">
+                <div class="industrial-field">
+                  <label for="fechaStop">Fecha Stop</label>
+                  <input type="text" id="fechaStop" readonly />
+                </div>
+
+                <div class="industrial-field">
+                  <label for="stopGeneral">General</label>
+                  <input type="text" id="stopGeneral" readonly />
+                </div>
+
+                <div class="industrial-field">
+                  <label for="stopEspecifico">Específico</label>
+                  <input type="text" id="stopEspecifico" readonly />
+                </div>
+
+                <div class="industrial-field block">
+                  <label for="comentarioStop">Comentario Stop</label>
+                  <textarea id="comentarioStop" readonly></textarea>
+                </div>
+              </div>
+            </div>
+
+            <div class="industrial-card">
+              <div class="industrial-card-title">Información Pulling</div>
+
+              <div class="industrial-form">
+                <div class="industrial-field">
+                  <label for="fechaPulling">Fecha Pulling</label>
+                  <input type="text" id="fechaPulling" readonly />
+                </div>
+
+                <div class="industrial-field">
+                  <label for="numWorkover"># Workover</label>
+                  <input type="text" id="numWorkover" readonly />
+                </div>
+
+                <div class="industrial-field">
+                  <label for="numPulling"># Pulling</label>
+                  <input type="text" id="numPulling" readonly />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="pozos-industrial-bottom">
+            <div class="industrial-table-card">
+              <div class="industrial-table-title">Equipo de Fondo</div>
+              <div class="table-wrap">
+                <table class="industrial-grid">
+                  <thead>
+                    <tr>
+                      <th style="width:22%;">Equipo</th>
+                      <th style="width:18%;">Serie</th>
+                      <th style="width:22%;">Descripción</th>
+                      <th style="width:18%;">No. Parte</th>
+                      <th style="width:10%;">Longitud</th>
+                      <th style="width:10%;">Propiedad</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tbodyEquipoFondo"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="industrial-table-card">
+              <div class="industrial-table-title">Equipo de Superficie</div>
+              <div class="table-wrap">
+                <table class="industrial-grid">
+                  <thead>
+                    <tr>
+                      <th style="width:20%;">Equipo</th>
+                      <th style="width:20%;">No. Serie</th>
+                      <th style="width:34%;">Descripción</th>
+                      <th style="width:13%;">Condición</th>
+                      <th style="width:13%;">Propiedad</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tbodyEquipoSuperficie"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="industrial-comments-grid">
+              <div class="industrial-comment-card">
+                <h4>Comentario Técnico</h4>
+                <textarea id="comentarioTecnico" readonly></textarea>
+              </div>
+
+              <div class="industrial-comment-card">
+                <h4>Comentario Reporte</h4>
+                <textarea id="comentarioReporte" readonly></textarea>
+              </div>
+            </div>
+
+            <div id="estadoPozos" class="industrial-info-banner">
+              Selecciona un pozo para visualizar su información.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="carga" class="module-section">
+        <div class="section-header">
+          
+          <div class="actions">
+            
+          </div>
+        </div>
+
+        <div class="carga-module-grid">
+          <div class="card">
+            <div class="carga-panel-title">Carga Pozos</div>
+
+            <div class="carga-buttons-group">
+              <button
+                id="btnReporteInstalacion"
+                class="carga-action-btn active"
+                data-info="instalacion"
+                type="button"
+              >
+                <span class="btn-number">1</span>
+                REPORTE DE INSTALACIÓN
+              </button>
+
+              <button
+                id="btnRequisicionBienes"
+                class="carga-action-btn"
+                data-info="requisicion"
+                type="button"
+              >
+                <span class="btn-number">2</span>
+                REQUISICIÓN DE BIENES
+              </button>
+
+              <button
+                id="btnReportePulling"
+                class="carga-action-btn"
+                data-info="pulling"
+                type="button"
+              >
+                <span class="btn-number">3</span>
+                REPORTE DE PULLING
+              </button>
+            </div>
+
+            <input
+              type="file"
+              id="fileReporteInstalacion"
+              accept=".xlsx,.xlsm,.xls"
+              style="display:none"
+            />
+            <input
+              type="file"
+              id="inputRequisicionBienes"
+              accept=".xlsx,.xlsm,.xls"
+              style="display:none"
+            />
+
+
+
+
+            <div id="estadoImportacion" class="estado-importacion"></div>
+          </div>
+
+          <div class="card" id="historialCard">
+            <div class="subidas-header">
+              <h3>Historial de subidas</h3>
+              <div class="actions">
+                <button class="btn btn-secondary" type="button">WELL STATUS</button>
+                <button class="btn btn-secondary" type="button">DATA QPM</button>
+                <button class="btn btn-secondary" type="button">Data Operaciones</button>
+              </div>
+            </div>
+
+            <p class="subidas-note">Aquí puedes visualizar las últimas cargas realizadas en el sistema.</p>
+
+            <div class="table-wrap">
+              <table id="tablaHistorial">
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Pozo</th>
+                    <th>Tipo</th>
+                    <th>Usuario</th>
+                  </tr>
+                </thead>
+                <tbody id="historialBody">
+
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:20px;">
+          <div class="carga-panel-title">REPORTES</div>
+          <div class="carga-buttons-group" style="max-width: 360px;">
+            <button id="btnReporte" class="carga-action-btn" type="button">
+              <span class="btn-number">4</span>
+              REPORTE
+            </button>
+
+            <button id="btnReportePEC" class="carga-action-btn" type="button">
+              <span class="btn-number">5</span>
+              REPORTE PEC
+            </button>
+          </div>
+        </div>
+      </section>
+
+    <section id="stop" class="module-section">
+      <div class="section-header">
+       
+        <div class="actions">
+          <button class="btn btn-primary" type="button" id="btnGuardarStop">Guardar</button>
+        </div>
+      </div>
+
+      <div class="stop-module-wrap">
+        <div class="stop-grid">
+          
+          <!-- BUSCADOR -->
+          <div class="stop-card stop-card-search">
+            <div class="stop-card-title">Búsqueda de Pozo</div>
+
+            <div class="stop-form">
+              <div class="stop-field">
+                <label for="txtBuscarStopPozo">Buscador</label>
+                <input type="text" id="txtBuscarStopPozo" placeholder="Escribe el nombre del pozo..." />
+              </div>
+
+              <div class="stop-field">
+                <label for="cmbStopPozo">Pozo</label>
+                <select id="cmbStopPozo">
+                  <option value="">Seleccionar</option>
+                </select>
+              </div>
+
+
+            </div>
+          </div>
+
+          <!-- INGRESO DE DATOS -->
+          <div class="stop-card stop-card-main">
+            <div class="stop-card-title">Ingreso de Datos</div>
+
+            <div class="stop-form two-columns">
+              <div class="stop-field">
+                <label for="stopFechaStopInput">Fecha Stop</label>
+                <input type="date" id="stopFechaStopInput" />
+              </div>
+
+              <div class="stop-field">
+                <label for="stopFechaStartInput">Fecha Start</label>
+                <input type="date" id="stopFechaStartInput" />
+              </div>
+
+              <div class="stop-field">
+                <label for="stopGeneralInput">General</label>
+                <select id="stopGeneralInput">
+                  <option value="">Seleccionar</option>
+                </select>
+              </div>
+              <div class="stop-field">
+                <label for="stopGeneralEspecificoInput">General Específico</label>
+                <select id="stopGeneralEspecificoInput">
+                  <option value="">Seleccionar</option>
+                </select>
+              </div>
+              <div class="stop-field full">
+                <label for="stopEspecificoInput">Específico</label>
+                <select id="stopEspecificoInput">
+                  <option value="">Seleccionar</option>
+                </select>
+              </div>
+              <div class="stop-field full">
+                <label for="stopRazonStopInput">Razón de Stop</label>
+                <textarea id="stopRazonStopInput" placeholder="Detalle la razón del stop..."></textarea>
+              </div>
+              <div class="stop-field full">
+                <label for="QAQCRazonPullInput">QA/QC</label>
+                <textarea id="QAQCRazonQAQCInput" placeholder="Detalle la razon de QA/QC"></textarea>
+              </div>
+              <div class="stop-field full">
+                <label for="stopRazonPullInput">Razón de Pull</label>
+                <textarea id="stopRazonPullInput" placeholder="Detalle la razón del pulling, si aplica..."></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="edicion" class="module-section">
+      <div class="section-header">
+        
+        <div class="actions">
+          <button class="btn btn-secondary" type="button" id="btnRecargarTablas">Recargar Tablas</button>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 250px 1fr; gap: 20px; padding: 20px;">
+        <!-- Panel de Tablas -->
+        <div class="card" style="height: fit-content;">
+          <h3 style="margin-bottom: 15px; color: var(--primary);">Tablas Disponibles</h3>
+          <div id="tablasList" style="display: flex; flex-direction: column; gap: 8px;">
+            <p style="color: var(--muted);">Cargando tablas...</p>
+          </div>
+        </div>
+
+        <!-- Área de Datos -->
+        <div class="card">
+          <div id="edicionContent" style="min-height: 400px;">
+            <p style="text-align: center; color: var(--muted); margin-top: 50px;">
+              Selecciona una tabla para comenzar a editar
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+    </main>
+  </div>
+
+  <script>
+    function getApiBase() {
+  // El frontend debe apuntar siempre al backend Flask.
+  // Si abres el archivo desde Live Server (5500) o como archivo local (origin null),
+  // este valor evita que los fetch se vayan al puerto equivocado.
+  return "http://127.0.0.1:5000";
+}
+
+const API_BASE = getApiBase();
+
+    const buttons = document.querySelectorAll('.tab-btn');
+    const sections = document.querySelectorAll('.module-section');
+    const title = document.querySelector('.title h1');
+    const subtitle = document.querySelector('.title p');
+
+const labels = {
+  dashboard: ["Inicio", "Resumen general y conexión a Supabase"],
+  pozos: ["Pozos", "Detalle de pozos y equipos"],
+  carga: ["Carga", "Importación de archivos y procesos de carga"],
+  stop: ["Stop", "Registro y consulta de estados Stop"],
+  edicion: ["Edición", "Consulta y edición de tablas"]
+};
+
+    if (title) title.textContent = labels.dashboard[0];
+    if (subtitle) subtitle.textContent = labels.dashboard[1];
+
+    buttons.forEach(button => {
+      button.addEventListener('click', () => {
+        const tab = button.dataset.tab;
+
+        buttons.forEach(b => b.classList.remove('active'));
+        button.classList.add('active');
+
+        sections.forEach(section => section.classList.remove('active'));
+        document.getElementById(tab).classList.add('active');
+
+        if (title) title.textContent = labels[tab]?.[0] || '';
+        if (subtitle) subtitle.textContent = labels[tab]?.[1] || '';
+      });
+    });
+    function login() {
+      const user = document.getElementById("loginUser").value;
+      const pass = document.getElementById("loginPass").value;
+
+      if (user === "Mario" && pass === "123456") {
+        document.getElementById("loginScreen").style.display = "none";
+        inicializarDatos();
+      } else {
+        document.getElementById("loginError").style.display = "block";
+      }
+    }
+
+    function inicializarDatos() {
+      checkHealth();
+      cargarPozos();
+      cargarPozosStop();
+      cargarResumenDashboard();
+      limpiarDetalle();
+      cargarGeneral();
+      actualizarVistaStop();
+      cargarListaTablas();
+    }
+    function setEstado(msg) {
+      const box = document.getElementById("estadoPozos");
+      if (box) box.textContent = msg;
+    }
+
+    function fillValue(id, value) {
+      const el = document.getElementById(id);
+      if (el) el.value = value ?? "";
+    }
+
+    function createEmptyRows(tbodyId, cols = 5, rows = 5) {
+      const tbody = document.getElementById(tbodyId);
+      if (!tbody) return;
+
+      tbody.innerHTML = "";
+
+      for (let i = 0; i < rows; i++) {
+        const tr = document.createElement("tr");
+        for (let j = 0; j < cols; j++) {
+          const td = document.createElement("td");
+          td.textContent = "";
+          tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+      }
+    }
+    function mostrarSoloTabla(tablaId) {
+
+      // Oculta todas
+      ["tablaCliente", "tablaStatus", "tablaPulled"].forEach(id => {
+        const t = document.getElementById(id);
+        if (t) t.style.display = "none";
+      });
+
+      // Muestra solo la seleccionada
+      const tablaActiva = document.getElementById(tablaId);
+      if (tablaActiva) {
+        tablaActiva.style.display = "table";
+      }
+    }
+    function cargarTablaCliente() {
+      fetch(`${API_BASE}/api/cliente_instalacion`)
+        .then(async res => {
+          const response = await res.json();
+          if (!res.ok || !response.ok) {
+            throw new Error(response.error || `HTTP ${res.status}`);
+          }
+
+          const tbody = document.querySelector("#tablaCliente tbody");
+          if (!tbody) return;
+          tbody.innerHTML = "";
+
+          if (!response.data || response.data.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="5">No hay registros para mostrar</td></tr>`;
+          } else {
+            response.data.forEach(row => {
+              tbody.innerHTML += `
+                <tr>
+                  <td>${row.POZO_ID ?? ""}</td>
+                  <td>${row.NO_INSTALACION ?? ""}</td>
+                  <td>${row.CLIENTE ?? ""}</td>
+                  <td>${row.BLOQUE ?? ""}</td>
+                  <td>${row.CAMPO ?? ""}</td>
+                </tr>
+              `;
+            });
+          }
+
+          mostrarSoloTabla("tablaCliente");
+        })
+        .catch(err => {
+          console.error("Error cargando tabla cliente:", err);
+          setEstado(`Error cargando CLIENTE_INSTALACION: ${err.message}`);
+        });
+    }
+    function cargarTablaPulled() {
+      fetch(`${API_BASE}/api/cliente_pull`)
+        .then(async res => {
+          const response = await res.json();
+          if (!res.ok || !response.ok) {
+            throw new Error(response.error || `HTTP ${res.status}`);
+          }
+
+          const tbody = document.querySelector("#tablaPulled tbody");
+          if (!tbody) return;
+          tbody.innerHTML = "";
+
+          if (!response.data || response.data.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="5">No hay registros para mostrar</td></tr>`;
+          } else {
+            response.data.forEach(row => {
+              tbody.innerHTML += `
+                <tr>
+                  <td>${row.POZO_ID ?? ""}</td>
+                  <td>${row.FECHA_INICIO ?? ""}</td>
+                  <td>${row.FECHA_PARADA ?? ""}</td>
+                  <td>${row.NUM_PULL ?? ""}</td>
+                  <td>${row.RAZON_PULL ?? ""}</td>
+                </tr>
+              `;
+            });
+          }
+
+          mostrarSoloTabla("tablaPulled");
+        })
+        .catch(err => {
+          console.error("Error cargando tabla pulled:", err);
+          setEstado(`Error cargando CLIENTE_PULL: ${err.message}`);
+        });
+    }
+    function cargarTablaStatus() {
+      fetch(`${API_BASE}/api/status`)
+        .then(async res => {
+          const response = await res.json();
+          if (!res.ok || !response.ok) {
+            throw new Error(response.error || `HTTP ${res.status}`);
+          }
+
+          const tbody = document.querySelector("#tablaStatus tbody");
+          if (!tbody) return;
+          tbody.innerHTML = "";
+
+          if (!response.data || response.data.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="5">No hay registros para mostrar</td></tr>`;
+          } else {
+            response.data.forEach(row => {
+              tbody.innerHTML += `
+                <tr>
+                  <td>${row.POZO_ID ?? ""}</td>
+                  <td>${row.NO_INSTALACION ?? ""}</td>
+                  <td>${row.STOP_DATE ?? ""}</td>
+                  <td>${row.RAZON_STOP ?? ""}</td>
+                  <td>${row.START_DATE ?? ""}</td>
+                </tr>
+              `;
+            });
+          }
+
+          mostrarSoloTabla("tablaStatus");
+        })
+        .catch(err => {
+          console.error("Error cargando tabla status:", err);
+          setEstado(`Error cargando STATUS: ${err.message}`);
+        });
+    }  
+    function renderEquipoFondo(rows) {
+      const tbody = document.getElementById("tbodyEquipoFondo");
+      if (!tbody) return;
+
+      tbody.innerHTML = "";
+
+      if (!rows || rows.length === 0) {
+        createEmptyRows("tbodyEquipoFondo", 6, 5);
+        return;
+      }
+
+      rows.forEach(r => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${r.EQUIPO ?? ""}</td>
+          <td>${r.NO_SERIE ?? ""}</td>
+          <td>${r.DESCRIPCION ?? ""}</td>
+          <td>${r.NO_PARTE ?? ""}</td>
+          <td>${r.LONGITUD ?? ""}</td>
+          <td>${r.PROPIEDAD ?? ""}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+    
+
+    function renderEquipoSuperficie(rows) {
+      const tbody = document.getElementById("tbodyEquipoSuperficie");
+      if (!tbody) return;
+
+      tbody.innerHTML = "";
+
+      if (!rows || rows.length === 0) {
+        createEmptyRows("tbodyEquipoSuperficie", 5, 5);
+        return;
+      }
+
+      rows.forEach(r => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${r.EQUIPO ?? ""}</td>
+          <td>${r.NO_SERIE ?? ""}</td>
+          <td>${r.DESCRIPCION ?? ""}</td>
+          <td>${r.CONDICION ?? ""}</td>
+          <td>${r.PROPIEDAD ?? ""}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function actualizarStatusChip(status) {
+      const chip = document.getElementById("pozoStatusChip");
+      if (!chip) return;
+
+      chip.textContent = status || "SIN DATO";
+      chip.className = "industrial-status-chip";
+
+      if (status === "RUNNING") {
+        chip.classList.add("chip-running");
+      } else if (status === "STOP") {
+        chip.classList.add("chip-stop");
+      } else if (status === "PULLED") {
+        chip.classList.add("chip-pulled");
+      } else {
+        chip.classList.add("chip-running");
+      }
+    }
+
+    function actualizarVistaStop() {
+      const stopFechaStopInput = document.getElementById("stopFechaStopInput");
+      const stopFechaStartInput = document.getElementById("stopFechaStartInput");
+      const stopRazonStopInput = document.getElementById("stopRazonStopInput");
+      const stopRazonPullInput = document.getElementById("stopRazonPullInput");
+
+      const viewFechaStop = document.getElementById("viewFechaStop");
+      const viewFechaStart = document.getElementById("viewFechaStart");
+      const viewRazonStop = document.getElementById("viewRazonStop");
+      const viewRazonPull = document.getElementById("viewRazonPull");
+
+      function formatearFechaVisual(valor) {
+        if (!valor) return "--/--/----";
+        const partes = String(valor).split("-");
+        if (partes.length !== 3) return valor;
+        return `${partes[2]}/${partes[1]}/${partes[0]}`;
+      }
+
+      if (viewFechaStop) {
+        viewFechaStop.textContent = formatearFechaVisual(stopFechaStopInput?.value);
+      }
+
+      if (viewFechaStart) {
+        viewFechaStart.textContent = formatearFechaVisual(stopFechaStartInput?.value);
+      }
+
+      if (viewRazonStop) {
+        viewRazonStop.textContent = stopRazonStopInput?.value?.trim() || "Sin información";
+      }
+
+      if (viewRazonPull) {
+        viewRazonPull.textContent = stopRazonPullInput?.value?.trim() || "Sin información";
+      }
+    }
+
+    function formatDateForInput(valor) {
+      if (!valor) return "";
+      return String(valor).split(" ")[0];
+    }
+
+    function extraerFechaSolo(valor) {
+      if (!valor) return null;
+      return valor;
+    }
+
+    async function checkHealth() {
+      try {
+        const res = await fetch(`${API_BASE}/api/health`);
+        const data = await res.json();
+        const metric = document.getElementById("metricApi");
+        if (metric) metric.textContent = data.ok ? "OK" : "FAIL";
+      } catch (err) {
+        const metric = document.getElementById("metricApi");
+        if (metric) metric.textContent = "FAIL";
+      }
+    }
+
+    async function cargarPozos(buscar = "") {
+      try {
+        const url = `${API_BASE}/api/pozos?buscar=${encodeURIComponent(buscar)}`;
+        const res = await fetch(url);
+
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(`HTTP ${res.status}: ${text}`);
+        }
+
+        const json = await res.json();
+
+        if (!json.ok) {
+          throw new Error(json.error || "No se pudo cargar la lista de pozos");
+        }
+
+        const combo1 = document.getElementById("cmbPozoWeb");
+        const combo2 = document.getElementById("cmbPozoFWeb");
+
+        if (combo1) combo1.innerHTML = `<option value="">Seleccionar</option>`;
+        if (combo2) combo2.innerHTML = `<option value="">Seleccionar</option>`;
+
+        json.data.forEach(item => {
+          const valor = JSON.stringify({
+            pozo_id: item.pozo_id,
+            no_instalacion: item.no_instalacion
+          });
+
+          if (combo1) {
+            const opt1 = document.createElement("option");
+            opt1.value = valor;
+            opt1.textContent = item.label;
+            combo1.appendChild(opt1);
+          }
+
+          if (combo2) {
+            const opt2 = document.createElement("option");
+            opt2.value = valor;
+            opt2.textContent = item.label;
+            combo2.appendChild(opt2);
+          }
+        });
+
+        const metricPozos = document.getElementById("metricPozos");
+        if (metricPozos) metricPozos.textContent = json.data.length;
+
+        setEstado(`Pozos cargados: ${json.data.length}`);
+      } catch (err) {
+        const metricPozos = document.getElementById("metricPozos");
+        if (metricPozos) metricPozos.textContent = "0";
+        setEstado(`Error cargando pozos: ${err.message}`);
+        console.error("Error cargando pozos:", err);
+      }
+    }
+
+    async function cargarDetallePozo(valorCombo, origen = "cmbPozoWeb") {
+      if (!valorCombo) {
+        limpiarDetalle();
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(valorCombo);
+        const pozo_id = parsed.pozo_id;
+        const no_instalacion = parsed.no_instalacion;
+
+        const url = `${API_BASE}/api/pozos/detalle?pozo_id=${encodeURIComponent(pozo_id)}&no_instalacion=${encodeURIComponent(no_instalacion)}`;
+        const res = await fetch(url);
+        const json = await res.json();
+
+        if (!json.ok) {
+          throw new Error(json.error || "No se pudo cargar el detalle del pozo");
+        }
+
+        const d = json.data;
+
+        fillValue("pozoCliente", d.datos_pozo?.cliente);
+        fillValue("pozoBloque", d.datos_pozo?.bloque);
+        fillValue("pozoCampo", d.datos_pozo?.campo);
+        fillValue("pozoArena", d.datos_pozo?.arena);
+
+        actualizarStatusChip(d.pozo?.status);
+        fillValue("pozoStop", d.pozo?.stop);
+        fillValue("pozoContrato", d.pozo?.contrato);
+        fillValue("pozoRunLife", d.pozo?.run_life);
+        fillValue("pozoArranque", d.pozo?.arranque);
+
+        fillValue("fechaStop", d.stop?.fecha_stop);
+        fillValue("stopGeneral", d.stop?.general);
+        fillValue("stopEspecifico", d.stop?.especifico);
+        fillValue("comentarioStop", d.stop?.comentario_stop);
+
+
+        fillValue("fechaPulling", d.pulling?.fecha_pulling);
+        fillValue("numWorkover", d.pulling?.workover);
+        fillValue("numPulling", d.pulling?.num_pulling);
+
+        fillValue("comentarioTecnico", d.comentarios?.comentario_tecnico);
+        fillValue("comentarioReporte", d.comentarios?.comentario_reporte);
+
+        renderEquipoFondo(d.equipo_fondo);
+        renderEquipoSuperficie(d.equipo_superficie);
+
+        if (origen === "cmbPozoWeb") {
+          const cmbPozoFWeb = document.getElementById("cmbPozoFWeb");
+          if (cmbPozoFWeb) cmbPozoFWeb.value = valorCombo;
+        } else {
+          const cmbPozoWeb = document.getElementById("cmbPozoWeb");
+          if (cmbPozoWeb) cmbPozoWeb.value = valorCombo;
+        }
+
+        setEstado(`Pozo cargado: ${pozo_id} - ${no_instalacion}`);
+      } catch (err) {
+        setEstado(`Error cargando detalle: ${err.message}`);
+      }
+    }
+
+    function limpiarDetalle() {
+      [
+        "pozoCliente", "pozoBloque", "pozoCampo", "pozoArena",
+        "pozoStop", "pozoContrato", "pozoRunLife", "pozoArranque",
+        "fechaStop", "stopGeneral", "stopEspecifico", "comentarioStop",
+        "fechaPulling", "numWorkover", "numPulling",
+        "comentarioTecnico", "comentarioReporte"
+      ].forEach(id => fillValue(id, ""));
+
+      actualizarStatusChip("RUNNING");
+      createEmptyRows("tbodyEquipoFondo", 6, 5);
+      createEmptyRows("tbodyEquipoSuperficie", 5, 5);
+    }
+
+    async function cargarGeneral() {
+      const stopGeneralInput = document.getElementById("stopGeneralInput");
+      const stopGeneralEspecificoInput = document.getElementById("stopGeneralEspecificoInput");
+      const stopEspecificoInput = document.getElementById("stopEspecificoInput");
+
+      if (!stopGeneralInput || !stopGeneralEspecificoInput || !stopEspecificoInput) return;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/fallas/general`);
+        const json = await res.json();
+
+        if (!res.ok || !json.ok) {
+          throw new Error(json.error || "No se pudo cargar GENERAL");
+        }
+
+        stopGeneralInput.innerHTML = '<option value="">Seleccione...</option>';
+        stopGeneralEspecificoInput.innerHTML = '<option value="">Seleccione...</option>';
+        stopEspecificoInput.innerHTML = '<option value="">Seleccione...</option>';
+
+        json.data.forEach(item => {
+          const opt = document.createElement("option");
+          opt.value = item;
+          opt.textContent = item;
+          stopGeneralInput.appendChild(opt);
+        });
+      } catch (err) {
+        console.error("Error cargando GENERAL:", err.message);
+      }
+    }
+
+    async function cargarDetalleStop(pozo_id, no_instalacion) {
+      try {
+        const res = await fetch(
+          `${API_BASE}/api/stop/detalle?pozo_id=${encodeURIComponent(pozo_id)}&no_instalacion=${encodeURIComponent(no_instalacion)}`
+        );
+
+        const json = await res.json();
+
+        if (!res.ok || !json.ok) {
+          throw new Error(json.error || "No se pudo cargar detalle stop.");
+        }
+
+        const d = json.data || {};
+
+        fillValue("stopFechaStopInput", formatDateForInput(d.stop_date));
+        fillValue("stopFechaStartInput", formatDateForInput(d.start_date));
+        fillValue("stopRazonStopInput", d.razon_stop || "");
+        fillValue("stopRazonPullInput", d.pull_coment || "");
+        fillValue("QAQCRazonQAQCInput", d.qaqc || "");
+
+        fillValue("stopGeneralInput", d.general || "");
+
+        await cargarGeneralEspecifico(d.general || "", d.general_especifico || "");
+        await cargarEspecifico(d.general || "", d.general_especifico || "", d.especifico || "");
+
+        const stopEstadoChip = document.getElementById("stopEstadoChip");
+        if (stopEstadoChip) {
+          stopEstadoChip.textContent = d.estado || "STOP";
+        }
+
+        actualizarVistaStop();
+      } catch (err) {
+        console.error(err);
+        alert("Error cargando detalle stop: " + err.message);
+      }
+    }
+
+    async function cargarPozosStop(buscar = "") {
+      const cmbStopPozo = document.getElementById("cmbStopPozo");
+      if (!cmbStopPozo) return;
+
+      try {
+        const url = `${API_BASE}/api/pozos?buscar=${encodeURIComponent(buscar)}`;
+        const res = await fetch(url);
+
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(`HTTP ${res.status}: ${text}`);
+        }
+
+        const json = await res.json();
+
+        if (!json.ok) {
+          throw new Error(json.error || "No se pudo cargar la lista de pozos para Stop");
+        }
+
+        cmbStopPozo.innerHTML = `<option value="">Seleccionar</option>`;
+
+        json.data.forEach(item => {
+          const valor = JSON.stringify({
+            pozo_id: item.pozo_id,
+            no_instalacion: item.no_instalacion
+          });
+
+          const opt = document.createElement("option");
+          opt.value = valor;
+          opt.textContent = item.label;
+          cmbStopPozo.appendChild(opt);
+        });
+      } catch (err) {
+        console.error("Error cargando pozos stop:", err.message);
+      }
+    }
+    async function cargarResumenDashboard() {
+      try {
+        const res = await fetch(`${API_BASE}/api/dashboard/resumen`);
+        const json = await res.json();
+
+        if (!res.ok || !json.ok) {
+          throw new Error(json.error || "No se pudo cargar el resumen del dashboard");
+        }
+
+        const data = json.data || {};
+
+        const metricRunning = document.getElementById("metricRunning");
+        const metricStop = document.getElementById("metricStop");
+        const metricPulled = document.getElementById("metricPulled");
+
+        const metricPozos = document.getElementById("metricPozos");
+        if (metricPozos) metricPozos.textContent = data.total_pozos ?? 0;
+        if (metricRunning) metricRunning.textContent = data.running ?? 0;
+        if (metricStop) metricStop.textContent = data.stop ?? 0;
+        if (metricPulled) metricPulled.textContent = data.pulled ?? 0;
+
+      } catch (err) {
+        console.error("Error cargando resumen dashboard:", err.message);
+
+        const metricRunning = document.getElementById("metricRunning");
+        const metricStop = document.getElementById("metricStop");
+        const metricPulled = document.getElementById("metricPulled");
+
+        const metricPozos = document.getElementById("metricPozos");
+        if (metricPozos) metricPozos.textContent = "0";
+        if (metricRunning) metricRunning.textContent = "0";
+        if (metricStop) metricStop.textContent = "0";
+        if (metricPulled) metricPulled.textContent = "0";
+      }
+    }
+
+    async function guardarStop() {
+      const combo = document.getElementById("cmbStopPozo");
+
+      if (!combo || !combo.value) {
+        alert("Selecciona un pozo primero.");
+        return;
+      }
+
+      const seleccionado = JSON.parse(combo.value);
+
+      const payload = {
+        pozo_id: seleccionado.pozo_id,
+        no_instalacion: seleccionado.no_instalacion,
+        stop_date: extraerFechaSolo(document.getElementById("stopFechaStopInput")?.value),
+        razon_stop: document.getElementById("stopRazonStopInput")?.value?.trim() || null,
+        start_date: extraerFechaSolo(document.getElementById("stopFechaStartInput")?.value),
+        pull_coment: document.getElementById("stopRazonPullInput")?.value?.trim() || null,
+        general: document.getElementById("stopGeneralInput")?.value || null,
+        general_especifico: document.getElementById("stopGeneralEspecificoInput")?.value || null,
+        especifico: document.getElementById("stopEspecificoInput")?.value || null,
+        qaqc: document.getElementById("QAQCRazonQAQCInput")?.value?.trim() || null
+      };
+
+      try {
+        const res = await fetch(`${API_BASE}/api/stop/guardar`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(payload)
+        });
+
+        const json = await res.json();
+
+        if (!res.ok || !json.ok) {
+          throw new Error(json.error || "No se pudo guardar el registro stop.");
+        }
+
+        alert(json.message || "Guardado correctamente.");
+        await cargarDetalleStop(seleccionado.pozo_id, seleccionado.no_instalacion);
+      } catch (err) {
+        alert("Error guardando stop: " + err.message);
+      }
+    }
+
+    function setEstadoImportacion(tipo, mensaje) {
+      const estadoImportacion = document.getElementById('estadoImportacion');
+      if (!estadoImportacion) return;
+
+      estadoImportacion.className = 'estado-importacion ' + tipo;
+      estadoImportacion.textContent = mensaje;
+    }
+
+    const cmbPozoWeb = document.getElementById("cmbPozoWeb");
+    const cmbPozoFWeb = document.getElementById("cmbPozoFWeb");
+    const txtBuscarPozoWeb = document.getElementById("txtBuscarPozoWeb");
+    const btnRecargarPozos = document.getElementById("btnRecargarPozos");
+
+    const txtBuscarStopPozo = document.getElementById("txtBuscarStopPozo");
+    const cmbStopPozo = document.getElementById("cmbStopPozo");
+    const btnGuardarStop = document.getElementById("btnGuardarStop");
+
+    const stopGeneralInput = document.getElementById("stopGeneralInput");
+    const stopGeneralEspecificoInput = document.getElementById("stopGeneralEspecificoInput");
+    const stopEspecificoInput = document.getElementById("stopEspecificoInput");
+
+    const cargaButtons = document.querySelectorAll('.carga-action-btn');
+    const cargaInfoBox = document.getElementById('cargaInfoBox');
+
+    const cargaInfo = {
+      instalacion: {
+        title: 'Reporte de Instalación',
+        text: 'Selecciona un archivo Excel para importar el reporte de instalación.',
+        endpoint: '/api/importar/reporte-instalacion',
+        tipoHistorial: 'Instalación',
+        boton: 'btnReporteInstalacion',
+        textoBoton: '<span class="btn-number">1</span> IMPORTANDO...'
+      },
+      requisicion: {
+        title: 'Requisición de Bienes',
+        text: 'Selecciona el archivo Excel y confirma el número de instalación para continuar con la carga.',
+        endpoint: '/api/importar/requisicion-bienes',
+        tipoHistorial: 'Requisición de Bienes',
+        boton: 'btnRequisicionBienes',
+        textoBoton: '<span class="btn-number">2</span> IMPORTANDO...'
+      },
+      pulling: {
+        title: 'Reporte de Pulling',
+        text: 'Selecciona un archivo Excel para importar el reporte de pulling.',
+        endpoint: '/api/importar/reporte-pulling',
+        tipoHistorial: 'Pulling',
+        boton: 'btnReportePulling',
+        textoBoton: '<span class="btn-number">3</span> IMPORTANDO...'
+      }
+    };
+
+    let tipoCargaActiva = 'instalacion';
+
+    if (cmbPozoWeb) {
+      cmbPozoWeb.addEventListener("change", (e) => {
+        cargarDetallePozo(e.target.value, "cmbPozoWeb");
+      });
+    }
+
+    if (cmbPozoFWeb) {
+      cmbPozoFWeb.addEventListener("change", (e) => {
+        cargarDetallePozo(e.target.value, "cmbPozoFWeb");
+      });
+    }
+
+    if (txtBuscarPozoWeb) {
+      txtBuscarPozoWeb.addEventListener("input", (e) => {
+        cargarPozos(e.target.value);
+      });
+    }
+
+    if (btnRecargarPozos) {
+      btnRecargarPozos.addEventListener("click", () => {
+        cargarPozos(document.getElementById("txtBuscarPozoWeb")?.value || "");
+      });
+    }
+
+    if (txtBuscarStopPozo) {
+      txtBuscarStopPozo.addEventListener("input", (e) => {
+        cargarPozosStop(e.target.value);
+      });
+    }
+
+    if (cmbStopPozo) {
+      cmbStopPozo.addEventListener("change", async (e) => {
+        const valor = e.target.value;
+        if (!valor) return;
+
+        const parsed = JSON.parse(valor);
+        await cargarDetalleStop(parsed.pozo_id, parsed.no_instalacion);
+      });
+    }
+
+    if (btnGuardarStop) {
+      btnGuardarStop.addEventListener("click", guardarStop);
+    }
+
+    async function cargarGeneralEspecifico(general, valorSeleccionado = "") {
+      if (!stopGeneralEspecificoInput || !stopEspecificoInput) return;
+
+      stopGeneralEspecificoInput.innerHTML = '<option value="">Seleccione...</option>';
+      stopEspecificoInput.innerHTML = '<option value="">Seleccione...</option>';
+
+      if (!general) return;
+
+      try {
+        const res = await fetch(
+          `${API_BASE}/api/fallas/general_especifico?general=${encodeURIComponent(general)}`
+        );
+        const json = await res.json();
+
+        if (!res.ok || !json.ok) {
+          throw new Error(json.error || "No se pudo cargar GENERAL_ESPECIFICO");
+        }
+
+        json.data.forEach(item => {
+          const opt = document.createElement("option");
+          opt.value = item;
+          opt.textContent = item;
+          stopGeneralEspecificoInput.appendChild(opt);
+        });
+
+        if (valorSeleccionado) {
+          stopGeneralEspecificoInput.value = valorSeleccionado;
+        }
+      } catch (err) {
+        console.error("Error cargando GENERAL_ESPECIFICO:", err.message);
+      }
+    }
+
+    async function cargarEspecifico(general, general_especifico, valorSeleccionado = "") {
+      if (!stopEspecificoInput) return;
+
+      stopEspecificoInput.innerHTML = '<option value="">Seleccione...</option>';
+
+      if (!general || !general_especifico) return;
+
+      try {
+        const res = await fetch(
+          `${API_BASE}/api/fallas/especifico?general=${encodeURIComponent(general)}&general_especifico=${encodeURIComponent(general_especifico)}`
+        );
+        const json = await res.json();
+
+        if (!res.ok || !json.ok) {
+          throw new Error(json.error || "No se pudo cargar ESPECIFICO");
+        }
+
+        json.data.forEach(item => {
+          const opt = document.createElement("option");
+          opt.value = item;
+          opt.textContent = item;
+          stopEspecificoInput.appendChild(opt);
+        });
+
+        if (valorSeleccionado) {
+          stopEspecificoInput.value = valorSeleccionado;
+        }
+      } catch (err) {
+        console.error("Error cargando ESPECIFICO:", err.message);
+      }
+    }
+
+    if (stopGeneralInput) {
+      stopGeneralInput.addEventListener("change", async () => {
+        await cargarGeneralEspecifico(stopGeneralInput.value);
+      });
+    }
+
+    if (stopGeneralEspecificoInput) {
+      stopGeneralEspecificoInput.addEventListener("change", async () => {
+        await cargarEspecifico(
+          stopGeneralInput.value,
+          stopGeneralEspecificoInput.value
+        );
+      });
+    }
+
+    cargaButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.info;
+        if (!key) return;
+
+        cargaButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        tipoCargaActiva = key;
+
+        if (cargaInfoBox && cargaInfo[key]) {
+          cargaInfoBox.innerHTML = `
+            <h4>${cargaInfo[key].title}</h4>
+            <p>${cargaInfo[key].text}</p>
+          `;
+        }
+      });
+    });
+
+    const btnReporteInstalacion = document.getElementById('btnReporteInstalacion');
+    const fileReporteInstalacion = document.getElementById('fileReporteInstalacion');
+    const historialBody = document.getElementById('historialBody');
+    const btnVerHistorial = document.getElementById('btnVerHistorial');
+    const historialCard = document.getElementById('historialCard');
+    const btnRequisicionBienes = document.getElementById('btnRequisicionBienes');
+    const btnReportePulling = document.getElementById('btnReportePulling');
+
+    if (btnReporteInstalacion) {
+      btnReporteInstalacion.addEventListener('click', () => {
+        tipoCargaActiva = 'instalacion';
+        if (fileReporteInstalacion) fileReporteInstalacion.click();
+      });
+    }
+
+    if (btnReportePulling) {
+      btnReportePulling.addEventListener('click', () => {
+        tipoCargaActiva = 'pulling';
+        if (cargaInfoBox) {
+          cargaInfoBox.innerHTML = `
+            <h4>Reporte de Pulling</h4>
+            <p>Selecciona el archivo Excel y confirma el NO_INSTALACION para continuar con la carga.</p>
+          `;
+        }
+        if (fileReporteInstalacion) fileReporteInstalacion.click();
+      });
+    }
+
+const btnReporte = document.getElementById('btnReporte');
+const btnReportePEC = document.getElementById('btnReportePEC');
+
+async function descargarArchivoReporte(endpoint, nombreBase) {
+  try {
+    setEstadoImportacion('info', `Generando ${nombreBase}...`);
+
+    const response = await fetch(`${API_BASE}${endpoint}`, {
+      method: 'GET'
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || 'No se pudo generar el reporte.');
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+
+    const ahora = new Date();
+    const marca =
+      ahora.getFullYear() +
+      String(ahora.getMonth() + 1).padStart(2, '0') +
+      String(ahora.getDate()).padStart(2, '0') + '_' +
+      String(ahora.getHours()).padStart(2, '0') +
+      String(ahora.getMinutes()).padStart(2, '0') +
+      String(ahora.getSeconds()).padStart(2, '0');
+
+    a.download = `${nombreBase}_${marca}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+
+    setEstadoImportacion('success', `${nombreBase} descargado correctamente.`);
+  } catch (err) {
+    setEstadoImportacion('error', `Error generando ${nombreBase}: ${err.message}`);
+  }
+}
+
+if (btnReporte) {
+  btnReporte.addEventListener('click', () => {
+    descargarArchivoReporte('/api/reportes/reporte', 'REPORTE');
+  });
+}
+
+if (btnReportePEC) {
+  btnReportePEC.addEventListener('click', () => {
+    descargarArchivoReporte('/api/reportes/reporte-pec', 'REPORTE_PEC');
+  });
+}
+
+    if (fileReporteInstalacion) {
+      fileReporteInstalacion.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const cfg = cargaInfo[tipoCargaActiva] || cargaInfo.instalacion;
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const pozoRaw = document.getElementById('pozoSelect')?.value || '';
+        let noInstFromSelect = '';
+
+        if (pozoRaw) {
+          try {
+            const pozoParsed = JSON.parse(pozoRaw);
+            if (pozoParsed?.pozo_id) formData.append('pozo_id', pozoParsed.pozo_id);
+            if (pozoParsed?.no_instalacion !== undefined && pozoParsed?.no_instalacion !== null) {
+              noInstFromSelect = String(pozoParsed.no_instalacion).trim();
+              formData.append('no_instalacion', noInstFromSelect);
+            }
+          } catch (_) {
+            formData.append('pozo_id', pozoRaw);
+          }
+        }
+
+        if (cfg.endpoint === '/api/importar/reporte-pulling' && !noInstFromSelect) {
+          const noInstManual = prompt('Ingresa NO_INSTALACION para el reporte de Pulling:');
+          if (!noInstManual || !noInstManual.trim()) {
+            setEstadoImportacion('error', 'Debes agregar NO_INSTALACION para continuar con el reporte de Pulling.');
+            return;
+          }
+          formData.set('no_instalacion', noInstManual.trim());
+        }
+
+        const botonActivo = document.getElementById(cfg.boton);
+        const textoOriginal = botonActivo?.innerHTML || '';
+        const tituloOriginal = cargaInfoBox?.innerHTML || '';
+
+        try {
+          if (botonActivo) {
+            botonActivo.disabled = true;
+            if (cfg.textoBoton) botonActivo.innerHTML = cfg.textoBoton;
+          }
+          setEstadoImportacion('info', `Importando ${cfg.title.toLowerCase()}, por favor espera...`);
+
+          const response = await fetch(`${API_BASE}${cfg.endpoint}`, {
+            method: 'POST',
+            body: formData
+          });
+
+          const result = await response.json();
+
+          if (!response.ok || !result.ok) {
+            throw new Error(result.mensaje || result.error || 'Error en la importación');
+          }
+
+          const resumenImportacion = result.inserted
+            ? Object.entries(result.inserted)
+                .map(([tabla, cantidad]) => `${tabla}: ${cantidad}`)
+                .join(' | ')
+            : '';
+
+          const advertenciasImportacion = result.warnings && result.warnings.length
+            ? `<p style="color:#f0bd54; margin-top:8px;">Advertencias: ${result.warnings.length}</p>`
+            : '';
+
+          setEstadoImportacion('success', `${result.message || 'Importación realizada correctamente.'}${resumenImportacion ? ' — ' + resumenImportacion : ''}`);
+
+          if (cargaInfoBox) {
+            cargaInfoBox.innerHTML = `
+              <h4>${cfg.title}</h4>
+              <p>${result.message || 'Importación realizada correctamente.'}</p>
+              ${resumenImportacion ? `<p style="margin-top:8px;">${resumenImportacion}</p>` : ''}
+              ${advertenciasImportacion}
+            `;
+          }
+
+          const ahora = new Date();
+          const fechaTexto =
+            ahora.getFullYear() + '-' +
+            String(ahora.getMonth() + 1).padStart(2, '0') + '-' +
+            String(ahora.getDate()).padStart(2, '0') + ' ' +
+            String(ahora.getHours()).padStart(2, '0') + ':' +
+            String(ahora.getMinutes()).padStart(2, '0');
+
+          const pozoSeleccionado = document.getElementById('pozoSelect')?.value || 'N/D';
+
+          const nuevaFila = document.createElement('tr');
+          nuevaFila.innerHTML = `
+            <td>${fechaTexto}</td>
+            <td>${pozoSeleccionado}</td>
+            <td>${cfg.tipoHistorial}</td>
+            <td>Web</td>
+          `;
+
+          if (historialBody) historialBody.prepend(nuevaFila);
+        } catch (error) {
+          setEstadoImportacion('error', 'Error: ' + error.message);
+          if (cargaInfoBox && tituloOriginal) {
+            cargaInfoBox.innerHTML = tituloOriginal;
+          }
+        } finally {
+          if (botonActivo) {
+            botonActivo.disabled = false;
+            botonActivo.innerHTML = textoOriginal;
+          }
+          fileReporteInstalacion.value = '';
+        }
+      });
+    }
+
+    const inputRequisicionBienes = document.getElementById('inputRequisicionBienes');
+
+    if (btnRequisicionBienes && inputRequisicionBienes) {
+      btnRequisicionBienes.addEventListener('click', () => {
+        tipoCargaActiva = 'requisicion';
+        if (cargaInfoBox) {
+          cargaInfoBox.innerHTML = `
+            <h4>Requisición de Bienes</h4>
+            <p>Selecciona el archivo Excel y confirma el número de instalación para continuar con la carga.</p>
+          `;
+        }
+        inputRequisicionBienes.click();
+      });
+
+      inputRequisicionBienes.addEventListener('change', async () => {
+        const archivo = inputRequisicionBienes.files[0];
+
+        if (!archivo) {
+          return;
+        }
+
+        const cfg = cargaInfo.requisicion;
+        const botonActivo = document.getElementById(cfg.boton);
+        const textoOriginal = botonActivo?.innerHTML || '';
+        const tituloOriginal = cargaInfoBox?.innerHTML || '';
+
+        const noInstalacion = prompt('Ingrese Num. de Instalación que corresponda:');
+
+        if (!noInstalacion || !noInstalacion.trim()) {
+          setEstadoImportacion('error', 'No se ingresó un Número de Instalación. Se canceló la operación.');
+          inputRequisicionBienes.value = '';
+          return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', archivo);
+        formData.append('no_instalacion', noInstalacion.trim());
+
+        try {
+          if (botonActivo) {
+            botonActivo.disabled = true;
+            if (cfg.textoBoton) botonActivo.innerHTML = cfg.textoBoton;
+          }
+
+          setEstadoImportacion('info', 'Importando requisición de bienes, por favor espera...');
+
+          const response = await fetch(`${API_BASE}${cfg.endpoint}`, {
+            method: 'POST',
+            body: formData
+          });
+
+          const data = await response.json();
+
+          if (!response.ok || !data.ok) {
+            throw new Error(data.mensaje || data.error || 'Error en la importación');
+          }
+
+          const resumenImportacion = data.inserted
+            ? Object.entries(data.inserted)
+                .map(([tabla, cantidad]) => `${tabla}: ${cantidad}`)
+                .join(' | ')
+            : '';
+
+          const advertenciasImportacion = data.warnings && data.warnings.length
+            ? `<p style="color:#f0bd54; margin-top:8px;">Advertencias: ${data.warnings.length}</p>`
+            : '';
+
+          setEstadoImportacion('success', `${data.message || 'Requisición de Bienes cargada correctamente.'}${resumenImportacion ? ' — ' + resumenImportacion : ''}`);
+
+          if (cargaInfoBox) {
+            cargaInfoBox.innerHTML = `
+              <h4>${cfg.title}</h4>
+              <p>${data.message || 'Requisición de Bienes cargada correctamente.'}</p>
+              ${resumenImportacion ? `<p style="margin-top:8px;">${resumenImportacion}</p>` : ''}
+              ${advertenciasImportacion}
+            `;
+          }
+
+          const ahora = new Date();
+          const fechaTexto =
+            ahora.getFullYear() + '-' +
+            String(ahora.getMonth() + 1).padStart(2, '0') + '-' +
+            String(ahora.getDate()).padStart(2, '0') + ' ' +
+            String(ahora.getHours()).padStart(2, '0') + ':' +
+            String(ahora.getMinutes()).padStart(2, '0');
+
+          const pozoSeleccionado = 'Requisición de Bienes';
+
+          const nuevaFila = document.createElement('tr');
+          nuevaFila.innerHTML = `
+            <td>${fechaTexto}</td>
+            <td>${noInstalacion.trim()}</td>
+            <td>${cfg.tipoHistorial}</td>
+            <td>Web</td>
+          `;
+
+          if (historialBody) historialBody.prepend(nuevaFila);
+        } catch (error) {
+          setEstadoImportacion('error', 'Error: ' + error.message);
+          if (cargaInfoBox && tituloOriginal) {
+            cargaInfoBox.innerHTML = tituloOriginal;
+          }
+        } finally {
+          if (botonActivo) {
+            botonActivo.disabled = false;
+            botonActivo.innerHTML = textoOriginal;
+          }
+          inputRequisicionBienes.value = '';
+        }
+      });
+    }
+
+    if (btnVerHistorial && historialCard) {
+      btnVerHistorial.addEventListener('click', () => {
+        historialCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+
+    [
+      document.getElementById("stopFechaStopInput"),
+      document.getElementById("stopFechaStartInput"),
+      document.getElementById("stopRazonStopInput"),
+      document.getElementById("stopRazonPullInput")
+    ].forEach(el => {
+      if (el) el.addEventListener("input", actualizarVistaStop);
+    });
+
+    inicializarDatos();
+  </script>
+
+  <!-- SCRIPT PARA EDICIÓN DE TABLAS -->
+  <script>
+    let tablaActual = null;
+    let paginaActual = 1;
+    let porPagina = 50;
+    let datosTablaActual = [];
+    let columnasTablaActual = [];
+    let registrosModificados = new Map(); // Rastrear cambios
+
+    async function cargarListaTablas() {
+      try {
+        const res = await fetch(`${API_BASE}/api/tablas`);
+        const json = await res.json();
+
+        if (!res.ok || !json.ok) {
+          throw new Error(json.error || "Error al cargar tablas");
+        }
+
+        const tablasList = document.getElementById('tablasList');
+        tablasList.innerHTML = '';
+
+        json.tablas.forEach(tabla => {
+          const btn = document.createElement('button');
+          btn.className = 'btn btn-secondary';
+          btn.textContent = tabla;
+          btn.style.padding = '10px 12px';
+          btn.style.textAlign = 'left';
+          btn.style.borderRadius = '8px';
+          btn.style.border = '1px solid var(--border)';
+          btn.style.color = 'var(--text)';
+          btn.style.cursor = 'pointer';
+          btn.style.transition = 'all 0.3s ease';
+          
+          btn.addEventListener('mouseover', () => {
+            btn.style.backgroundColor = 'var(--border)';
+            btn.style.borderColor = 'var(--primary)';
+          });
+          
+          btn.addEventListener('mouseout', () => {
+            btn.style.backgroundColor = 'transparent';
+            btn.style.borderColor = 'var(--border)';
+          });
+          
+          btn.addEventListener('click', () => {
+            tablaActual = tabla;
+            paginaActual = 1;
+            registrosModificados.clear();
+            cargarDatosTabla(tabla, 1);
+          });
+
+          tablasList.appendChild(btn);
+        });
+      } catch (err) {
+        const tablasList = document.getElementById('tablasList');
+        tablasList.innerHTML = `<p style="color: var(--danger);">Error: ${err.message}</p>`;
+      }
+    }
+
+    async function cargarDatosTabla(nombreTabla, pagina = 1) {
+      try {
+        const busqueda = document.getElementById('edicionBusqueda')?.value || '';
+        const url = `${API_BASE}/api/tabla/datos/${encodeURIComponent(nombreTabla)}?pagina=${pagina}&por_pagina=${porPagina}`;
+        
+        const res = await fetch(url);
+        const json = await res.json();
+
+        if (!res.ok || !json.ok) {
+          throw new Error(json.error || "Error al cargar datos");
+        }
+
+        tablaActual = nombreTabla;
+        paginaActual = pagina;
+        datosTablaActual = json.datos;
+        columnasTablaActual = json.columnas;
+
+        const edicionContent = document.getElementById('edicionContent');
+        
+        // Información de la tabla
+        let html = `
+          <div style="margin-bottom: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <h3 style="color: var(--primary); margin-bottom: 10px;">${nombreTabla}</h3>
+                <p style="color: var(--muted); font-size: 12px;">
+                  Registros: <strong>${json.total_registros}</strong> | 
+                  Página: <strong>${pagina}/${json.total_paginas}</strong> | 
+                  Columnas: <strong>${json.columnas.length}</strong>
+                </p>
+              </div>
+              <div style="display: flex; gap: 10px;">
+                <input 
+                  type="text" 
+                  id="edicionBusqueda" 
+                  placeholder="Buscar..."
+                  style="
+                    padding: 8px 12px;
+                    background: var(--card);
+                    border: 1px solid var(--border);
+                    border-radius: 6px;
+                    color: var(--text);
+                    width: 200px;
+                  "
+                />
+                <button 
+                  onclick="exportarTabla('${nombreTabla}')"
+                  class="btn btn-secondary"
+                  style="padding: 8px 16px; font-size: 12px;"
+                >
+                
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+
+        // Tabla editable
+        html += `
+          <div style="overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 20px;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+              <thead style="background-color: var(--border); position: sticky; top: 0;">
+                <tr>
+                  <th style="padding: 10px; text-align: center; border-right: 1px solid var(--border-soft); width: 40px;">
+                    <input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)" style="cursor: pointer;">
+                  </th>
+        `;
+
+        // Headers
+        json.columnas.forEach(col => {
+          html += `<th style="padding: 10px; text-align: left; border-right: 1px solid var(--border-soft); color: var(--primary); font-weight: 600; white-space: nowrap;">${col.name}</th>`;
+        });
+
+        html += `
+                  <th style="padding: 10px; text-align: center; border-right: 1px solid var(--border-soft); width: 100px;">Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="tablaBody">
+        `;
+
+        // Filas de datos
+        json.datos.forEach((row, rowIdx) => {
+          const rowKey = `row_${rowIdx}`;
+          html += `<tr id="${rowKey}" style="border-bottom: 1px solid var(--border-soft);">`;
+          
+          // Checkbox
+          html += `<td style="padding: 8px; text-align: center; border-right: 1px solid var(--border-soft);">
+            <input type="checkbox" class="row-select" data-row-key="${rowKey}" style="cursor: pointer;">
+          </td>`;
+          
+          // Celdas
+          json.columnas.forEach(col => {
+            const value = row[col.name] ?? '';
+            const displayValue = value === null || value === undefined ? '—' : value;
+            const inputId = `${rowKey}_${col.name}`;
+            
+            html += `
+              <td style="padding: 0; border-right: 1px solid var(--border-soft);">
+                <input 
+                  type="text" 
+                  id="${inputId}"
+                  value="${String(displayValue).replace(/"/g, '&quot;')}"
+                  data-original="${String(displayValue).replace(/"/g, '&quot;')}"
+                  style="
+                    width: 100%;
+                    background: transparent;
+                    border: none;
+                    color: var(--text);
+                    padding: 8px;
+                    font-size: 12px;
+                    transition: all 0.2s;
+                  "
+                  onchange="marcarModificado('${rowKey}')"
+                  onmouseover="this.style.backgroundColor = 'var(--card-soft)'; this.style.borderBottom = '1px solid var(--primary)';"
+                  onmouseout="this.style.backgroundColor = 'transparent'; this.style.borderBottom = 'none';"
+                />
+              </td>
+            `;
+          });
+
+          // Acciones
+          html += `
+            <td style="padding: 8px; border-right: 1px solid var(--border-soft); text-align: center;">
+              <button 
+                onclick="guardarRegistro('${rowKey}', '${nombreTabla}')"
+                class="btn btn-secondary" 
+                style="padding: 4px 8px; font-size: 11px; margin-bottom: 4px; width: 100%;"
+              >
+                💾 Guardar
+              </button>
+              <button 
+                onclick="eliminarRegistro('${rowKey}', '${nombreTabla}')"
+                class="btn btn-secondary" 
+                style="padding: 4px 8px; font-size: 11px; width: 100%; background-color: var(--danger);"
+              >
+                🗑️ Eliminar
+              </button>
+            </td>
+          </tr>`;
+        });
+
+        html += `
+              </tbody>
+            </table>
+          </div>
+        `;
+
+        // Controles de paginación
+        if (json.total_paginas > 1) {
+          html += `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
+              <button 
+                onclick="cargarDatosTabla('${nombreTabla}', ${Math.max(1, pagina - 1)})"
+                ${pagina === 1 ? 'disabled' : ''}
+                class="btn btn-secondary"
+                style="padding: 8px 16px;"
+              >
+                ← Anterior
+              </button>
+              
+              <div style="color: var(--muted);">
+                Página <strong>${pagina}</strong> de <strong>${json.total_paginas}</strong>
+              </div>
+              
+              <button 
+                onclick="cargarDatosTabla('${nombreTabla}', ${Math.min(json.total_paginas, pagina + 1)})"
+                ${pagina === json.total_paginas ? 'disabled' : ''}
+                class="btn btn-secondary"
+                style="padding: 8px 16px;"
+              >
+                Siguiente →
+              </button>
+            </div>
+          `;
+        }
+
+        edicionContent.innerHTML = html;
+      } catch (err) {
+        const edicionContent = document.getElementById('edicionContent');
+        edicionContent.innerHTML = `<p style="color: var(--danger); padding: 20px;">Error: ${err.message}</p>`;
+      }
+    }
+
+    function marcarModificado(rowKey) {
+      const row = document.getElementById(rowKey);
+      if (!row) return;
+
+      const cambios = {};
+      let hayCambios = false;
+
+      columnasTablaActual.forEach(col => {
+        const input = document.getElementById(`${rowKey}_${col.name}`);
+        if (input) {
+          const original = input.dataset.original;
+          const actual = input.value;
+
+          if (original !== actual) {
+            cambios[col.name] = actual;
+            hayCambios = true;
+          }
+        }
+      });
+
+      if (hayCambios) {
+        registrosModificados.set(rowKey, cambios);
+        row.style.backgroundColor = 'rgba(255, 215, 0, 0.1)';
+      } else {
+        registrosModificados.delete(rowKey);
+        row.style.backgroundColor = 'transparent';
+      }
+    }
+
+    async function guardarRegistro(rowKey, nombreTabla) {
+      try {
+        const row = document.getElementById(rowKey);
+        if (!row) throw new Error("Fila no encontrada");
+
+        const cambios = {};
+        const whereClause = {};
+
+        columnasTablaActual.forEach(col => {
+          const input = document.getElementById(`${rowKey}_${col.name}`);
+          if (input) {
+            const original = input.dataset.original;
+            const actual = input.value;
+
+            if (original !== actual) {
+              cambios[col.name] = actual;
+            }
+
+            // Identificar la fila con todos los valores originales
+            whereClause[col.name] = original;
+          }
+        });
+
+        if (Object.keys(cambios).length === 0) {
+          alert('No hay cambios para guardar');
+          return;
+        }
+
+        const payload = { ...cambios, _where: whereClause };
+
+        const res = await fetch(`${API_BASE}/api/tabla/actualizar/${encodeURIComponent(nombreTabla)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const json = await res.json();
+
+        if (!res.ok || !json.ok) {
+          throw new Error(json.error || "Error al guardar");
+        }
+
+        alert('✅ Registro actualizado exitosamente');
+        registrosModificados.delete(rowKey);
+        row.style.backgroundColor = 'transparent';
+
+        columnasTablaActual.forEach(col => {
+          const input = document.getElementById(`${rowKey}_${col.name}`);
+          if (input) {
+            input.dataset.original = input.value;
+          }
+        });
+
+      } catch (err) {
+        alert('❌ Error: ' + err.message);
+      }
+    }
+
+    async function eliminarRegistro(rowKey, nombreTabla) {
+      if (!confirm('¿Estás seguro de que deseas eliminar este registro?')) {
+        return;
+      }
+
+      try {
+        const whereClause = {};
+
+        columnasTablaActual.forEach(col => {
+          const input = document.getElementById(`${rowKey}_${col.name}`);
+          if (input) {
+            whereClause[col.name] = input.dataset.original;
+          }
+        });
+
+        const res = await fetch(`${API_BASE}/api/tabla/eliminar/${encodeURIComponent(nombreTabla)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ _where: whereClause })
+        });
+
+        const json = await res.json();
+
+        if (!res.ok || !json.ok) {
+          throw new Error(json.error || "Error al eliminar");
+        }
+
+        alert('✅ Registro eliminado exitosamente');
+        cargarDatosTabla(nombreTabla, paginaActual);
+
+      } catch (err) {
+        alert('❌ Error: ' + err.message);
+      }
+    }
+
+    function toggleSelectAll(checkbox) {
+      const checkboxes = document.querySelectorAll('.row-select');
+      checkboxes.forEach(cb => cb.checked = checkbox.checked);
+    }
+
+    
+    const btnRecargarTablas = document.getElementById('btnRecargarTablas');
+    if (btnRecargarTablas) {
+      btnRecargarTablas.addEventListener('click', cargarListaTablas);
+    }
+  </script>
+
+  <script>
+    document.getElementById("btnLogout").addEventListener("click", function () {
+
+      // Limpiar almacenamiento (por si usas después)
+      localStorage.clear();
+      sessionStorage.clear();
+
+      // Limpiar campos de login
+      document.getElementById("loginUser").value = "";
+      document.getElementById("loginPass").value = "";
+
+      // Ocultar contenido y mostrar login
+      document.getElementById("loginScreen").style.display = "flex";
+
+    });
+  </script>
+
+</body>
+</html>
