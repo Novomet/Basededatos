@@ -67,7 +67,7 @@ def registrar_historial_subida(sb, pozo=None, no_instalacion=None, tipo=None, us
         logger.warning(f"No se pudo registrar historial: {e}")
 
 
-@("/api/historial-subidas", methods=["GET"])
+@app.route("/api/historial-subidas", methods=["GET"])
 def listar_historial_subidas():
     try:
         sb = get_supabase()
