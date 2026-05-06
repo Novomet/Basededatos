@@ -2815,23 +2815,31 @@ const labels = {
     if (btnReporteInstalacion) {
       btnReporteInstalacion.addEventListener('click', () => {
         tipoCargaActiva = 'instalacion';
-        if (fileReporteInstalacion) fileReporteInstalacion.click();
+    
+        if (fileReporteInstalacion) {
+          fileReporteInstalacion.value = "";
+          fileReporteInstalacion.click();
+        }
       });
     }
-
+    
     if (btnReportePulling) {
       btnReportePulling.addEventListener('click', () => {
         tipoCargaActiva = 'pulling';
+    
         if (cargaInfoBox) {
           cargaInfoBox.innerHTML = `
             <h4>Reporte de Pulling</h4>
             <p>Selecciona el archivo Excel y confirma el NO_INSTALACION para continuar con la carga.</p>
           `;
         }
-        if (fileReporteInstalacion) fileReporteInstalacion.click();
+    
+        if (fileReporteInstalacion) {
+          fileReporteInstalacion.value = "";
+          fileReporteInstalacion.click();
+        }
       });
     }
-
 const btnReporte = document.getElementById('btnReporte');
 const btnReportePEC = document.getElementById('btnReportePEC');
 
@@ -2888,6 +2896,9 @@ if (btnReportePEC) {
 
     if (fileReporteInstalacion) {
       fileReporteInstalacion.addEventListener('change', async (e) => {
+        console.log("Archivo seleccionado");
+        console.log("Tipo activo:", tipoCargaActiva);
+        console.log("Archivo:", e.target.files[0]);
         const file = e.target.files[0];
         if (!file) return;
 
