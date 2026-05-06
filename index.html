@@ -1809,9 +1809,8 @@
   </div>
 
   <script>
-    function getApiBase() {
-
-  return "https://basededatos-8wn7.onrender.com";
+function getApiBase() {
+  return "https://basededatos-1-yy74.onrender.com";
 }
 
 const API_BASE = getApiBase();
@@ -1861,7 +1860,7 @@ const labels = {
       }
 
       try {
-        const response = await fetch("https://basededatos-8wn7.onrender.com/api/login", {
+        fetch(`${API_BASE}/api/login`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json"
