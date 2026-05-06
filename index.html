@@ -2936,8 +2936,16 @@ if (btnReportePEC) {
             body: formData
           });
 
-          const result = await response.json();
-
+          const texto = await response.text();
+          console.log("RESPUESTA BACKEND:", texto);
+          
+          let result;
+          try {
+            result = JSON.parse(texto);
+          } catch {
+            throw new Error(texto);
+          }
+          
           if (!response.ok || !result.ok) {
             throw new Error(result.mensaje || result.error || 'Error en la importación');
           }
