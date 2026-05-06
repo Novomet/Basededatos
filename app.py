@@ -1608,7 +1608,7 @@ def importar_reporte_instalacion():
             "inserted": inserted,
             "total_inserted": total_inserted,
             "warnings": warnings,
-            "debug_steps": debug_steps,
+            
         }), (200 if total_inserted > 0 else 500)
 
     except Exception as e:
