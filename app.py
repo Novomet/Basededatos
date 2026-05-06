@@ -161,18 +161,28 @@ def _split_name_parenthesis(value):
 
 def _parse_long(value):
     value = _normalize_cell(value)
+
     if value is None:
         return None
-    if isinstance(value, str):
-        v = value.strip().lower()
-        if v in ["", "none", "null", "undefined", "nan"]:
-            return None
-        text = str(value).strip()
-    if text == "":
+
+    if isinstance(value, bool):
         return None
+
+    if isinstance(value, (int, float)):
+        try:
+            return int(float(value))
+        except Exception:
+            return None
+
+    text = str(value).strip()
+
+    if text.lower() in ["", "none", "null", "undefined", "nan"]:
+        return None
+
     text = text.replace(" ", "")
     text = text.replace(".", "")
     text = text.replace(",", ".")
+
     try:
         return int(float(text))
     except Exception:
