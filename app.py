@@ -851,30 +851,32 @@ def crear_usuario():
         }), 500
 @app.route("/api/importar/reporte-instalacion", methods=["POST"])
 def importar_reporte_instalacion():
-       
-    registrar_historial_subida(
-        sb,
-        pozo=pozo_id,
-        no_instalacion=instalacion_num,
-        tipo="Reporte de Instalación",
-        usuario=request.form.get("usuario"),
-        archivo=uploaded.filename,
-        estado="OK",
-        detalle="Importación finalizada"
-    )
+
     try:
         uploaded = request.files.get("file") or request.files.get("archivo")
+
         if not uploaded:
-            return jsonify({"ok": False, "error": "No se envió archivo (use file o archivo)"}), 400
+            return jsonify({
+                "ok": False,
+                "error": "No se envió archivo (use file o archivo)"
+            }), 400
 
         if not uploaded.filename:
-            return jsonify({"ok": False, "error": "Archivo vacío"}), 400
+            return jsonify({
+                "ok": False,
+                "error": "Archivo vacío"
+            }), 400
 
         filename = uploaded.filename.lower()
+
         if not (filename.endswith(".xlsx") or filename.endswith(".xlsm")):
-            return jsonify({"ok": False, "error": "Solo se permiten archivos .xlsx o .xlsm"}), 400
+            return jsonify({
+                "ok": False,
+                "error": "Solo se permiten archivos .xlsx o .xlsm"
+            }), 400
 
         sb = get_supabase()
+
 
         # Leer Excel desde memoria
         file_bytes = uploaded.read()
