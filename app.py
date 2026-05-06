@@ -13,13 +13,18 @@ import unicodedata
 import logging
 import traceback
 import json
+import re
+from datetime import datetime
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
+from openpyxl.utils import get_column_letter
 
 load_dotenv()  # ✅ Carga el .env al iniciar
 
 app = Flask(__name__)
 
 # ✅ Permite peticiones desde Live Server (5500) y cualquier origen local
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -37,7 +42,41 @@ def get_supabase():
         raise RuntimeError("Faltan SUPABASE_URL o SUPABASE_API_KEY en el .env")
     return create_client(url, key)
 
+def registrar_historial_subida(sb, pozo=None, no_instalacion=None, tipo=None, usuario=None, archivo=None, estado="OK", detalle=None):
+    try:
+        payload = {
+            "pozo": pozo,
+            "no_instalacion": str(no_instalacion) if no_instalacion is not None else None,
+            "tipo": tipo,
+            "usuario": usuario,
+            "archivo": archivo,
+            "estado": estado,
+            "detalle": detalle,
+        }
 
+        sb.table("historial_subidas").insert(payload).execute()
+
+    except Exception as e:
+        logger.warning(f"No se pudo registrar historial: {e}")
+
+
+@app.route("/api/historial-subidas", methods=["GET"])
+def listar_historial_subidas():
+    try:
+        sb = get_supabase()
+
+        res = (
+            sb.table("historial_subidas")
+            .select("fecha,pozo,no_instalacion,tipo,usuario,archivo,estado,detalle")
+            .order("fecha", desc=True)
+            .limit(50)
+            .execute()
+        )
+
+        return jsonify({"ok": True, "data": serialize_rows(res.data)})
+
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 def serialize_value(val):
     if isinstance(val, datetime):
         return val.strftime("%Y-%m-%d %H:%M:%S")
@@ -124,12 +163,11 @@ def _parse_long(value):
     value = _normalize_cell(value)
     if value is None:
         return None
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
-        try:
-            return int(value)
-        except Exception:
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in ["", "none", "null", "undefined", "nan"]:
             return None
-    text = str(value).strip()
+        text = str(value).strip()
     if text == "":
         return None
     text = text.replace(" ", "")
@@ -599,6 +637,16 @@ def health():
 
 @app.route("/api/importar/requisicion-bienes", methods=["POST"])
 def importar_requisicion_bienes():
+    registrar_historial_subida(
+        sb,
+        pozo=pozo_val,
+        no_instalacion=no_instalacion,
+        tipo="Requisición de Bienes",
+        usuario=request.form.get("usuario"),
+        archivo=uploaded.filename,
+        estado="OK",
+        detalle="Importación finalizada"
+    )
     try:
         uploaded = request.files.get("file") or request.files.get("archivo")
         if not uploaded:
@@ -741,9 +789,72 @@ def importar_requisicion_bienes():
 # ══════════════════════════════════════════════
 # IMPORTAR REPORTE INSTALACIÓN
 # ══════════════════════════════════════════════
+@app.route("/api/usuarios", methods=["POST"])
+def crear_usuario():
+    try:
+        data = request.get_json()
+
+        nombre = data.get("nombre")
+        apellido = data.get("apellido")
+        correo = data.get("correo")
+        contrasena = data.get("contrasena")
+
+        if not nombre or not apellido or not correo or not contrasena:
+            return jsonify({
+                "ok": False,
+                "error": "Faltan datos obligatorios"
+            }), 400
+
+        sb = get_supabase()
+
+        usuario_payload = {
+            "nombre": nombre,
+            "apellido": apellido,
+            "correo": correo,
+            "contrasena": contrasena,
+            "permiso_carga": bool(data.get("permiso_carga", False)),
+            "permiso_stop": bool(data.get("permiso_stop", False)),
+        }
+        existe = (
+        sb.table("usuarios")
+        .select("nombre")
+        .eq("nombre", nombre)
+        .limit(1)
+        .execute()
+    )
+
+        if existe.data:
+            return jsonify({
+                "ok": False,
+                "error": "Ya existe un usuario con ese nombre"
+            }), 409
+
+        res = sb.table("usuarios").insert(usuario_payload).execute()
+
+        return jsonify({
+            "ok": True,
+            "message": "Usuario creado correctamente",
+            "data": res.data
+        })
+
+    except Exception as e:
+        return jsonify({
+            "ok": False,
+            "error": str(e)
+        }), 500
 @app.route("/api/importar/reporte-instalacion", methods=["POST"])
 def importar_reporte_instalacion():
-
+       
+    registrar_historial_subida(
+        sb,
+        pozo=pozo_id,
+        no_instalacion=instalacion_num,
+        tipo="Reporte de Instalación",
+        usuario=request.form.get("usuario"),
+        archivo=uploaded.filename,
+        estado="OK",
+        detalle="Importación finalizada"
+    )
     try:
         uploaded = request.files.get("file") or request.files.get("archivo")
         if not uploaded:
@@ -1534,19 +1645,22 @@ def cliente_instalacion():
 # ══════════════════════════════════════════════
 # STATUS
 # ══════════════════════════════════════════════
-
 @app.route("/api/status", methods=["GET"])
 def obtener_status():
     try:
         sb = get_supabase()
+
         res = (
             sb.table("STATUS")
             .select("POZO_ID,NO_INSTALACION,STOP_DATE,RAZON_STOP,START_DATE")
             .not_.is_("STOP_DATE", "null")
+            .is_("START_DATE", "null")  # 👈 solo abiertos
             .order("STOP_DATE", desc=True)
             .execute()
         )
+
         return jsonify({"ok": True, "data": serialize_rows(res.data)})
+
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -1576,6 +1690,16 @@ def cliente_pull():
 # ══════════════════════════════════════════════
 @app.route("/api/importar/reporte-pulling", methods=["POST"])
 def importar_reporte_pulling():
+    registrar_historial_subida(
+        sb,
+        pozo=pozo_id,
+        no_instalacion=selected_no_inst_payload,
+        tipo="Reporte de Pulling",
+        usuario=request.form.get("usuario"),
+        archivo=uploaded.filename,
+        estado="OK",
+        detalle="Importación finalizada"
+    )
 
     try:
         uploaded = request.files.get("file") or request.files.get("archivo")
@@ -2218,7 +2342,18 @@ def obtener_datos_tabla(tabla):
 # ══════════════════════════════════════════════
 # ACTUALIZAR REGISTRO
 # ══════════════════════════════════════════════
+def limpiar_vacios(obj):
+    limpio = {}
 
+    for k, v in obj.items():
+        if v is None:
+            limpio[k] = None
+        elif isinstance(v, str) and v.strip().lower() in ["", "none", "null", "undefined", "nan"]:
+            limpio[k] = None
+        else:
+            limpio[k] = v
+
+    return limpio
 @app.route("/api/tabla/actualizar/<tabla>", methods=["POST"])
 def actualizar_registro(tabla):
     try:
@@ -2227,6 +2362,8 @@ def actualizar_registro(tabla):
             return jsonify({"ok": False, "error": "No se envió datos"}), 400
 
         where_clause = data.pop("_where", {})
+        
+        where_clause = limpiar_vacios(where_clause)
         if not where_clause:
             return jsonify({"ok": False, "error": "Se requiere clausula WHERE para actualizar"}), 400
         if not data:
@@ -2277,6 +2414,7 @@ def eliminar_registro(tabla):
             return jsonify({"ok": False, "error": "No se envió datos"}), 400
 
         where_clause = data.get("_where", {})
+        where_clause = limpiar_vacios(where_clause)
         if not where_clause:
             return jsonify({"ok": False, "error": "Se requiere clausula WHERE para eliminar"}), 400
 
@@ -2340,34 +2478,40 @@ def debug_columnas(tabla):
 @app.route("/api/pozos", methods=["GET"])
 def listar_pozos():
     buscar = request.args.get("buscar", "").strip()
+
     try:
-        sb    = get_supabase()
+        sb = get_supabase()
+
         query = (
             sb.table("CLIENTE_INSTALACION")
-            .select("POZO_ID,NO_INSTALACION")
-            .not_.is_("POZO_ID", "null")
-            .order("POZO_ID")
-            .order("NO_INSTALACION", desc=True)
+            .select("ID")
+            .not_.is_("ID", "null")
+            .order("ID")
         )
-        if buscar:
-            query = query.ilike("POZO_ID", f"%{buscar}%")
 
-        res  = query.execute()
-        seen = set()
+        if buscar:
+            query = query.ilike("ID", f"%{buscar}%")
+
+        res = query.execute()
+
         data = []
+        seen = set()
+
         for row in res.data:
-            pozo_id = row.get("POZO_ID")
-            no_inst = row.get("NO_INSTALACION")
-            key = (pozo_id, no_inst)
-            if key in seen:
+            id_pozo = row.get("ID")
+
+            if not id_pozo or id_pozo in seen:
                 continue
-            seen.add(key)
+
+            seen.add(id_pozo)
+
             data.append({
-                "pozo_id":        pozo_id,
-                "no_instalacion": no_inst,
-                "label": f"{pozo_id} - {no_inst}" if no_inst is not None else str(pozo_id),
+                "id": id_pozo,
+                "label": id_pozo
             })
+
         return jsonify({"ok": True, "data": data})
+
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -2380,18 +2524,26 @@ def listar_pozos():
 def guardar_stop():
     try:
         data = request.get_json() or {}
+        id_base = data.get("id")
 
-        pozo_id = data.get("pozo_id")
-        no_instalacion = data.get("no_instalacion")
+        if not id_base:
+            return jsonify({"ok": False, "error": "Falta ID"}), 400
 
-        if not pozo_id:
-            return jsonify({"ok": False, "error": "Falta pozo_id"}), 400
-
-        if no_instalacion is None or str(no_instalacion).strip() == "":
-            return jsonify({"ok": False, "error": "Falta no_instalacion"}), 400
-
-        id_base = f"{pozo_id}-{no_instalacion}"
         sb = get_supabase()
+
+        ci = (
+            sb.table("CLIENTE_INSTALACION")
+            .select("POZO_ID,NO_INSTALACION")
+            .eq("ID", id_base)
+            .limit(1)
+            .execute()
+        )
+
+        if not ci.data:
+            return jsonify({"ok": False, "error": "No existe ese ID en CLIENTE_INSTALACION"}), 404
+
+        pozo_id = ci.data[0].get("POZO_ID")
+        no_instalacion = ci.data[0].get("NO_INSTALACION")
 
         payload = {
             "ID": id_base,
@@ -2407,19 +2559,16 @@ def guardar_stop():
             "QAQC": data.get("qaqc"),
         }
 
-        # Buscar si existe un STOP abierto
         res_abierto = (
             sb.table("STATUS")
-            .select("ID, POZO_ID, NO_INSTALACION, STOP_DATE")
-            .eq("POZO_ID", str(pozo_id))
-            .eq("NO_INSTALACION", int(no_instalacion))
+            .select("ID,STOP_DATE")
+            .eq("ID", id_base)
             .is_("START_DATE", "null")
             .order("STOP_DATE", desc=True)
             .limit(1)
             .execute()
         )
 
-        # Si existe abierto, actualizar ese registro
         if res_abierto.data:
             registro = res_abierto.data[0]
 
@@ -2434,69 +2583,106 @@ def guardar_stop():
                 "QAQC": payload["QAQC"],
             }
 
-            sb.table("STATUS") \
-                .update(update_data) \
-                .eq("POZO_ID", str(pozo_id)) \
-                .eq("NO_INSTALACION", int(no_instalacion)) \
-                .eq("STOP_DATE", registro["STOP_DATE"]) \
-                .is_("START_DATE", "null") \
+            (
+                sb.table("STATUS")
+                .update(update_data)
+                .eq("ID", id_base)
+                .eq("STOP_DATE", registro["STOP_DATE"])
+                .is_("START_DATE", "null")
                 .execute()
+            )
 
-            return jsonify({
-                "ok": True,
-                "message": "STOP abierto actualizado correctamente."
-            })
+            return jsonify({"ok": True, "message": "STOP abierto actualizado correctamente."})
 
-        # Si NO existe abierto, crear nuevo registro STOP
         sb.table("STATUS").insert(payload).execute()
 
-        return jsonify({
-            "ok": True,
-            "message": "Nuevo registro STOP creado correctamente."
-        })
+        return jsonify({"ok": True, "message": "Nuevo registro STOP creado correctamente."})
 
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
-
 # ══════════════════════════════════════════════
 # DETALLE STOP
 # ══════════════════════════════════════════════
+@app.route("/api/login", methods=["POST"])
+def login_usuario():
+    try:
+        data = request.get_json()
 
+        nombre = data.get("nombre")
+        contrasena = data.get("contrasena")
+
+        if not nombre or not contrasena:
+            return jsonify({
+                "ok": False,
+                "error": "Ingrese nombre de usuario y contraseña"
+            }), 400
+
+        sb = get_supabase()
+
+        res = (
+            sb.table("usuarios")
+            .select("*")
+            .eq("nombre", nombre)
+            .eq("contrasena", contrasena)
+            .limit(1)
+            .execute()
+        )
+
+        if not res.data:
+            return jsonify({
+                "ok": False,
+                "error": "Credenciales incorrectas"
+            }), 401
+
+        return jsonify({
+            "ok": True,
+            "message": "Login correcto",
+            "usuario": res.data[0]
+        })
+
+    except Exception as e:
+        return jsonify({
+            "ok": False,
+            "error": str(e)
+        }), 500
 @app.route("/api/stop/detalle", methods=["GET"])
 def detalle_stop():
-    pozo_id        = request.args.get("pozo_id")
-    no_instalacion = request.args.get("no_instalacion")
+    id_base = request.args.get("id")
 
-    if not pozo_id or no_instalacion is None:
-        return jsonify({"ok": False, "error": "Faltan pozo_id o no_instalacion"}), 400
+    if not id_base:
+        return jsonify({"ok": False, "error": "Falta ID"}), 400
 
     try:
-        sb  = get_supabase()
+        sb = get_supabase()
+
         res = (
             sb.table("STATUS")
             .select("STOP_DATE,RAZON_STOP,START_DATE,PULL_COMENT,GENERAL,GENERAL_ESPECIFICO,ESPECIFICO,QAQC")
-            .eq("POZO_ID", str(pozo_id))
-            .eq("NO_INSTALACION", int(no_instalacion))
+            .eq("ID", id_base)
             .not_.is_("STOP_DATE", "null")
+            .is_("START_DATE", "null")
             .order("STOP_DATE", desc=True)
             .limit(1)
             .execute()
         )
+
         s = res.data[0] if res.data else {}
+
         return jsonify({
             "ok": True,
             "data": {
-                "stop_date":          s.get("STOP_DATE"),
-                "razon_stop":         s.get("RAZON_STOP"),
-                "start_date":         s.get("START_DATE"),
-                "pull_coment":        s.get("PULL_COMENT"),
-                "general":            s.get("GENERAL"),
+                "stop_date": s.get("STOP_DATE"),
+                "razon_stop": s.get("RAZON_STOP"),
+                "start_date": s.get("START_DATE"),
+                "pull_coment": s.get("PULL_COMENT"),
+                "general": s.get("GENERAL"),
                 "general_especifico": s.get("GENERAL_ESPECIFICO"),
-                "especifico":         s.get("ESPECIFICO"),
-                "qaqc":               s.get("QAQC"),
+                "especifico": s.get("ESPECIFICO"),
+                "qaqc": s.get("QAQC"),
             },
         })
+
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -2635,42 +2821,44 @@ def dashboard_resumen():
 
 @app.route("/api/pozos/detalle", methods=["GET"])
 def detalle_pozo():
-    pozo_id        = request.args.get("pozo_id")
-    no_instalacion = request.args.get("no_instalacion")
+    id_base = request.args.get("id")
 
-    if not pozo_id or no_instalacion is None:
-        return jsonify({"ok": False, "error": "Faltan pozo_id o no_instalacion"}), 400
+    if not id_base:
+        return jsonify({"ok": False, "error": "Falta ID"}), 400
 
     try:
         sb = get_supabase()
 
-        # ── CLIENTE_INSTALACION ────────────────
         ci_res = (
             sb.table("CLIENTE_INSTALACION")
-            .select("POZO_ID,NO_INSTALACION,CLIENTE,BLOQUE,CAMPO,FECHA_ARRANQUE,TIPO_NEGOCIO")
-            .eq("POZO_ID",        str(pozo_id))
-            .eq("NO_INSTALACION", int(no_instalacion))
+            .select("ID,POZO_ID,NO_INSTALACION,CLIENTE,BLOQUE,CAMPO,FECHA_ARRANQUE,TIPO_NEGOCIO")
+            .eq("ID", id_base)
             .limit(1)
             .execute()
         )
-        cliente_info = ci_res.data[0] if ci_res.data else {}
 
-        # ── INFPOZO2 ───────────────────────────
+        if not ci_res.data:
+            return jsonify({"ok": False, "error": "No existe ese ID en CLIENTE_INSTALACION"}), 404
+
+        cliente_info = ci_res.data[0]
+
+        pozo_id = cliente_info.get("POZO_ID")
+        no_instalacion = cliente_info.get("NO_INSTALACION")
+
         ip2_res = (
             sb.table("INFPOZO2_INSTALACION")
             .select("ZONA_PRODUCTORA_INICIAL,NO_WORKOVER")
-            .eq("POZO_ID",        str(pozo_id))
+            .eq("POZO_ID", str(pozo_id))
             .eq("NO_INSTALACION", int(no_instalacion))
             .limit(1)
             .execute()
         )
         infpozo2_info = ip2_res.data[0] if ip2_res.data else {}
 
-        # ── STATUS ────────────────────────────
         st_res = (
             sb.table("STATUS")
             .select("STOP_DATE,GENERAL,GENERAL_ESPECIFICO,ESPECIFICO,RAZON_STOP,PULL_COMENT,START_DATE")
-            .eq("POZO_ID",        str(pozo_id))
+            .eq("POZO_ID", str(pozo_id))
             .eq("NO_INSTALACION", int(no_instalacion))
             .not_.is_("STOP_DATE", "null")
             .order("STOP_DATE", desc=True)
@@ -2679,95 +2867,87 @@ def detalle_pozo():
         )
         status_info = st_res.data[0] if st_res.data else {}
 
-        # ── CLIENTE_PULL ──────────────────────
         cp_res = (
             sb.table("CLIENTE_PULL")
             .select("FECHA_INICIO,TIEMPO_FUN,NUM_PULL,RAZON_PULL,FECHA_PARADA")
             .eq("POZO_ID", str(pozo_id))
+            .eq("NO_INSTALACION", int(no_instalacion))
             .order("FECHA_INICIO", desc=True)
             .limit(1)
             .execute()
         )
         pull_info = cp_res.data[0] if cp_res.data else {}
 
-        # ── EQUIPO FONDO ──────────────────────
         ef_res = (
             sb.table("EQUIPOFONDO_INSTALACION")
             .select("EQUIPO,NO_SERIE,DESCRIPCION,NO_PARTE,LONGITUD,PROPIEDAD")
-            .eq("POZO_ID",        str(pozo_id))
+            .eq("POZO_ID", str(pozo_id))
             .eq("NO_INSTALACION", int(no_instalacion))
             .order("EQUIPO")
             .execute()
         )
-        equipo_fondo = serialize_rows(ef_res.data)
 
-        # ── EQUIPO SUPERFICIE ─────────────────
         es_res = (
             sb.table("EQUISUPERFICIE_INSTALACION")
             .select("EQUIPO,NO_SERIE,DESCRIPCION,CONDICION,PROPIEDAD")
-            .eq("POZO_ID",        str(pozo_id))
+            .eq("POZO_ID", str(pozo_id))
             .eq("NO_INSTALACION", int(no_instalacion))
             .order("EQUIPO")
             .execute()
         )
-        equipo_superficie = serialize_rows(es_res.data)
 
-        # ── Determinar estado ─────────────────
         estado = "RUNNING"
         if pull_info:
             estado = "PULLED"
         elif status_info:
-            stop_date   = status_info.get("STOP_DATE")
-            start_date  = status_info.get("START_DATE")
-            razon_stop  = status_info.get("RAZON_STOP")
-            pull_coment = status_info.get("PULL_COMENT")
-            if pull_coment:
+            if status_info.get("PULL_COMENT"):
                 estado = "PULLED"
-            elif stop_date and start_date:
-                estado = "RUNNING"
-            elif stop_date and razon_stop:
+            elif status_info.get("STOP_DATE") and not status_info.get("START_DATE"):
                 estado = "STOP"
+            else:
+                estado = "RUNNING"
 
         return jsonify({
             "ok": True,
             "data": {
                 "datos_pozo": {
-                    "pozo_id":        cliente_info.get("POZO_ID"),
-                    "no_instalacion": cliente_info.get("NO_INSTALACION"),
-                    "cliente":        cliente_info.get("CLIENTE"),
-                    "bloque":         cliente_info.get("BLOQUE"),
-                    "campo":          cliente_info.get("CAMPO"),
-                    "arena":          infpozo2_info.get("ZONA_PRODUCTORA_INICIAL"),
+                    "pozo_id": pozo_id,
+                    "no_instalacion": no_instalacion,
+                    "cliente": cliente_info.get("CLIENTE"),
+                    "bloque": cliente_info.get("BLOQUE"),
+                    "campo": cliente_info.get("CAMPO"),
+                    "arena": infpozo2_info.get("ZONA_PRODUCTORA_INICIAL"),
                 },
                 "pozo": {
-                    "status":   estado,
-                    "stop":     pull_info.get("FECHA_PARADA"),
+                    "status": estado,
+                    "stop": pull_info.get("FECHA_PARADA"),
                     "contrato": cliente_info.get("TIPO_NEGOCIO"),
                     "run_life": pull_info.get("TIEMPO_FUN"),
                     "arranque": cliente_info.get("FECHA_ARRANQUE"),
                 },
                 "stop": {
-                    "fecha_stop":         status_info.get("STOP_DATE"),
-                    "general":            status_info.get("GENERAL"),
+                    "fecha_stop": status_info.get("STOP_DATE"),
+                    "general": status_info.get("GENERAL"),
                     "general_especifico": status_info.get("GENERAL_ESPECIFICO"),
-                    "especifico":         status_info.get("ESPECIFICO"),
-                    "comentario_stop":    status_info.get("RAZON_STOP"),
-                    "pull_coment":        status_info.get("PULL_COMENT"),
-                    "fecha_start":        status_info.get("START_DATE"),
+                    "especifico": status_info.get("ESPECIFICO"),
+                    "comentario_stop": status_info.get("RAZON_STOP"),
+                    "pull_coment": status_info.get("PULL_COMENT"),
+                    "fecha_start": status_info.get("START_DATE"),
                 },
                 "pulling": {
                     "fecha_pulling": pull_info.get("FECHA_INICIO"),
-                    "workover":      infpozo2_info.get("NO_WORKOVER"),
-                    "num_pulling":   pull_info.get("NUM_PULL"),
+                    "workover": infpozo2_info.get("NO_WORKOVER"),
+                    "num_pulling": pull_info.get("NUM_PULL"),
                 },
                 "comentarios": {
                     "comentario_tecnico": status_info.get("PULL_COMENT"),
                     "comentario_reporte": pull_info.get("RAZON_PULL"),
                 },
-                "equipo_fondo":      equipo_fondo,
-                "equipo_superficie": equipo_superficie,
+                "equipo_fondo": serialize_rows(ef_res.data),
+                "equipo_superficie": serialize_rows(es_res.data),
             },
         })
+
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -2906,69 +3086,11 @@ def _as_date_or_none(value):
     return None
 
 
-def _extract_hp(txt):
-    if txt in (None, ""):
-        return None
-    m = re.search(r"([0-9]+(?:[.,][0-9]+)?)\s*HP", str(txt), flags=re.IGNORECASE)
-    return _parse_float(m.group(1)) if m else None
-
-
-def _extract_v(txt):
-    if txt in (None, ""):
-        return None
-    s = str(txt)
-    m = re.search(r"HP.*?([0-9]+(?:[.,][0-9]+)?)\s*V", s, flags=re.IGNORECASE)
-    return _parse_float(m.group(1)) if m else None
-
-
-def _extract_a(txt):
-    if txt in (None, ""):
-        return None
-    s = str(txt)
-    m = re.search(r"V.*?([0-9]+(?:[.,][0-9]+)?)\s*A", s, flags=re.IGNORECASE)
-    return m.group(1).replace("/", "").strip() if m else None
-
-
 def _extract_tipo_motor(txt):
     if txt in (None, ""):
         return None
     m = re.search(r"N\s*([0-9]+)\s*,\s*([^,]+?)\s*,", str(txt), flags=re.IGNORECASE)
     return m.group(2).strip() if m else None
-
-
-def _extract_rpm(txt):
-    if txt in (None, ""):
-        return None
-    tipo = _extract_tipo_motor(txt)
-    if tipo and tipo.upper() == "AM":
-        return 3492
-    s = str(txt)
-    m = re.search(r",\s*([0-9]+)\s*RPM", s, flags=re.IGNORECASE)
-    return _parse_long(m.group(1)) if m else None
-
-
-def _extract_serie_diam_motor(txt):
-    if txt in (None, ""):
-        return None
-    m = re.search(r"N\s*([0-9]+)", str(txt), flags=re.IGNORECASE)
-    return _parse_long(m.group(1)) if m else None
-
-
-def _extract_first_number_after_n(txt):
-    if txt in (None, ""):
-        return None
-    s = str(txt)
-    for m in re.finditer(r"[Nn]\s*([0-9]+)", s):
-        return _parse_long(m.group(1))
-    return None
-
-
-def _extract_serie_diam_primera_n(txt):
-    if txt in (None, ""):
-        return None
-    s = str(txt)
-    m = re.search(r"[Nn]\s*([0-9]+)", s)
-    return m.group(1) if m else None
 
 
 def _split_tokens(text):
@@ -2979,16 +3101,6 @@ def _split_tokens(text):
     return s.split(" ")
 
 
-def _primer_token_lp(txt):
-    tokens = _split_tokens(txt)
-    return tokens[0] if tokens else None
-
-
-def _segundo_token_lp(txt):
-    tokens = _split_tokens(txt)
-    return tokens[1] if len(tokens) > 1 else None
-
-
 def _extraer_etapas_lp(txt):
     s = _safe_str(txt)
     m = re.search(r"(\d+)\s*ETAP", s, flags=re.IGNORECASE)
@@ -2996,62 +3108,6 @@ def _extraer_etapas_lp(txt):
 
 # Compatibilidad: el resto del archivo llama a _extract_etapas_lp
 _extract_etapas_lp = _extraer_etapas_lp
-
-
-def _codigo_segun_modelo_lp(txt):
-    s = _safe_str(txt).upper()
-    if "LP" in s:
-        return "LP"
-    return None
-
-
-def _extraer_kva(txt):
-    if txt in (None, ""):
-        return None
-    s = str(txt)
-    m = re.search(r"([0-9]+(?:[.,][0-9]+)?)\s*KVA", s, flags=re.IGNORECASE)
-    return _parse_float(m.group(1)) if m else None
-
-
-def _extraer_pulsos(txt):
-    if txt in (None, ""):
-        return None
-    s = str(txt)
-    m = re.search(r"([0-9]+(?:[.,][0-9]+)?)\s*PULSOS", s, flags=re.IGNORECASE)
-    return _parse_float(m.group(1)) if m else None
-
-
-def _build_report_styles(ws, max_col: int, header_fill=None, subheader_fill=None, body_fill_even=None):
-    thin = Side(style="thin", color="000000")
-    border = Border(left=thin, right=thin, top=thin, bottom=thin)
-    for row in ws.iter_rows(min_row=1, max_row=ws.max_row, min_col=1, max_col=max_col):
-        for cell in row:
-            cell.border = border
-            if cell.row <= 3:
-                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-                cell.font = Font(bold=True, color="FFFFFF" if cell.row <= 2 else "000000")
-            else:
-                cell.alignment = Alignment(vertical="center", wrap_text=True)
-
-    if header_fill is None:
-        header_fill = PatternFill("solid", fgColor="0070C0")
-    if subheader_fill is None:
-        subheader_fill = PatternFill("solid", fgColor="DDEBF7")
-    if body_fill_even is None:
-        body_fill_even = PatternFill("solid", fgColor="DDEBF7")
-
-    for c in range(1, max_col + 1):
-        ws.cell(1, c).fill = header_fill
-        ws.cell(2, c).fill = header_fill
-        ws.cell(3, c).fill = subheader_fill
-        ws.cell(1, c).font = Font(bold=True, color="FFFFFF")
-        ws.cell(2, c).font = Font(bold=True, color="FFFFFF")
-        ws.cell(3, c).font = Font(bold=True, color="000000")
-
-    for r in range(4, ws.max_row + 1):
-        if r % 2 == 0:
-            for c in range(1, max_col + 1):
-                ws.cell(r, c).fill = body_fill_even
 
 
 def _autosize_columns(ws, max_col: int):
@@ -3085,612 +3141,856 @@ def _write_block_headers(ws, row: int, start_col: int, headers: list[str]):
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
 
-def _write_block_data(ws, start_row: int, start_col: int, pozo_order: list[str], row_map: dict, headers: list[str]):
-    for r_idx, pozo in enumerate(pozo_order, start=start_row):
-        values = row_map.get(pozo, {})
-        for c_idx, header in enumerate(headers, start=0):
-            ws.cell(r_idx, start_col + c_idx).value = _excel_safe_value(values.get(header))
+
+# =============================================================
+# REPORTE PEC - Adaptado del VBA original
+# =============================================================
+# =============================================================
+
+# =============================================================
+# CONSTANTES DE ESTILO
+# =============================================================
+PEC_FONT_NAME    = "Univers 47 CondensedLight"
+PEC_HEADER_FILL  = "000080"   # azul marino #000080 (RGB 0,0,128)
+PEC_HEADER_FONT  = "FFFFFF"   # letra blanca para los encabezados
+PEC_HEADER_ROW   = 3
+PEC_DATA_START   = 4
+PEC_TOTAL_COLS   = 128
 
 
+# =============================================================
+# HELPERS PORTADOS DEL VBA  (prefijo _pec_)
+# =============================================================
+def _pec_s(v):
+    return "" if v is None else str(v)
+
+def _pec_instr(start, hay, needle, ci=True):
+    """InStr(start, hay, needle [, vbTextCompare]). 1-based, 0 si no hay."""
+    if not hay or not needle:
+        return 0
+    if ci:
+        i = hay.upper().find(needle.upper(), start - 1)
+    else:
+        i = hay.find(needle, start - 1)
+    return i + 1 if i >= 0 else 0
+
+def _pec_instr_rev(hay, needle):
+    if not hay or not needle:
+        return 0
+    i = hay.rfind(needle)
+    return i + 1 if i >= 0 else 0
+
+def _pec_val(s):
+    """Equivalente Val(): número inicial. Devuelve int/float, 0 si nada."""
+    if s is None:
+        return 0
+    s = str(s).strip().replace("/", "")
+    if not s:
+        return 0
+    m = re.match(r"[-+]?\d+(\.\d+)?", s)
+    if not m:
+        return 0
+    try:
+        n = float(m.group(0))
+        return int(n) if n.is_integer() else n
+    except ValueError:
+        return 0
+
+
+# ---------- Extracciones de motor ----------
+def _pec_extraer_hp(txt):
+    s = _pec_s(txt)
+    if not s: return ""
+    p = _pec_instr(1, s, "HP")
+    if p == 0: return ""
+    seg = s[:p-1]
+    pc = _pec_instr_rev(seg, ",")
+    if pc == 0: return ""
+    return _pec_val(seg[pc:].strip())
+
+def _pec_extraer_v(txt):
+    s = _pec_s(txt)
+    if not s: return ""
+    p_hp = _pec_instr(1, s, "HP")
+    if p_hp == 0: return ""
+    p_v = _pec_instr(p_hp + 2, s, "V")
+    if p_v == 0: return ""
+    return _pec_val(s[p_hp+2:p_v-1].replace("/", "").strip())
+
+def _pec_extraer_a(txt):
+    s = _pec_s(txt)
+    if not s: return ""
+    p_hp = _pec_instr(1, s, "HP")
+    if p_hp == 0: return ""
+    p_v = _pec_instr(p_hp + 2, s, "V")
+    if p_v == 0: return ""
+    p_a = _pec_instr(p_v + 1, s, "A")
+    if p_a == 0: return ""
+    return s[p_v+1:p_a-1].replace("/", "").strip()
+
+def _pec_extraer_tipo_motor(txt):
+    s = _pec_s(txt)
+    if not s: return ""
+    p_n = _pec_instr(1, s, "N")
+    if p_n == 0: return ""
+    pc = _pec_instr(p_n, s, ",", ci=False)
+    if pc == 0: return ""
+    seg = s[p_n:pc-1].strip()
+    val_str = str(_pec_val(seg))
+    if "." in val_str:
+        val_str = val_str.split(".")[0]
+    return seg[len(val_str):]
+
+def _pec_extraer_serie_diam_motor(txt):
+    s = _pec_s(txt)
+    if not s: return ""
+    p_n = _pec_instr(1, s, "N")
+    if p_n == 0: return ""
+    pc = _pec_instr(p_n, s, ",", ci=False)
+    if pc == 0: return ""
+    v = _pec_val(s[p_n:pc-1].strip())
+    return v if v != 0 else ""
+
+def _pec_extraer_rpm(txt):
+    s = _pec_s(txt)
+    if not s: return ""
+    tipo = _pec_extraer_tipo_motor(txt)
+    if tipo and str(tipo).strip().upper() == "AM":
+        return 3492
+    p_rpm = _pec_instr(1, s, "RPM")
+    if p_rpm == 0: return ""
+    seg = s[:p_rpm-1]
+    pc = _pec_instr_rev(seg, ",")
+    if pc == 0: return ""
+    return _pec_val(seg[pc:].strip())
+
+def _pec_extraer_serie_diam_primera_n(texto):
+    """Primer 'N' seguido de dígitos -> esos dígitos (string)."""
+    if texto is None: return ""
+    s = str(texto)
+    n = len(s)
+    for i in range(n - 1):
+        if s[i].upper() == "N" and s[i+1].isdigit():
+            j = i + 1
+            dig = ""
+            while j < n and s[j].isdigit():
+                dig += s[j]
+                j += 1
+            if dig:
+                return dig
+    return ""
+
+
+# ---------- Tokens LP / Etapas / Código por modelo ----------
+def _pec_limpiar_inicio_lp(texto):
+    s = (texto or "").strip()
+    if s.upper().startswith("PUMP,"):
+        s = s[5:].strip()
+    return s
+
+def _pec_primer_token_lp(texto):
+    if texto is None: return ""
+    s = _pec_limpiar_inicio_lp(str(texto))
+    if not s: return ""
+    coma = s.find(",")
+    if coma >= 0:
+        return s[:coma].strip()
+    sp = s.find(" ")
+    return s[:sp] if sp >= 0 else s
+
+def _pec_segundo_token_lp(texto):
+    if texto is None: return ""
+    s = _pec_limpiar_inicio_lp(str(texto))
+    if not s: return ""
+    coma = s.find(",")
+    if coma >= 0:
+        resto = s[coma+1:].strip()
+        if not resto: return ""
+        coma2 = resto.find(",")
+        if coma2 >= 0:
+            return resto[:coma2].strip()
+        sp = resto.find(" ")
+        return resto[:sp] if sp >= 0 else resto
+    sp = s.find(" ")
+    if sp < 0: return ""
+    resto = s[sp+1:].lstrip()
+    if not resto: return ""
+    sp2 = resto.find(" ")
+    return resto[:sp2] if sp2 >= 0 else resto
+
+def _pec_extraer_etapas_lp(texto):
+    if texto is None: return ""
+    s = str(texto).upper()
+    p = s.find("STG")
+    if p < 0: return ""
+    i = p - 1
+    while i >= 0 and s[i] == " ":
+        i -= 1
+    dig = ""
+    while i >= 0 and s[i].isdigit():
+        dig = s[i] + dig
+        i -= 1
+    if dig:
+        try: return int(dig)
+        except ValueError: return ""
+    return ""
+
+def _pec_codigo_segun_modelo_lp(texto):
+    """Mapeo VBA: H->406, A->272, B->319, F->362, P->535."""
+    if texto is None: return ""
+    modelo = _pec_primer_token_lp(texto)
+    if not modelo or len(modelo) < 2:
+        return ""
+    return {"H": 406, "A": 272, "B": 319, "F": 362, "P": 535}.get(modelo[1].upper(), "")
+
+
+# ---------- KVA / Pulsos ----------
+def _pec_extraer_kva(texto):
+    s = "" if texto is None else str(texto)
+    for v in (" KVA", " kva", " Kva", " kvA"):
+        s = s.replace(v, "KVA")
+    u = s.upper()
+    p = u.find("KVA")
+    if p < 0: return ""
+    numero = ""
+    i = p - 1
+    while i >= 0 and u[i].isdigit():
+        numero = u[i] + numero
+        i -= 1
+    return f"{numero}KVA" if numero else ""
+
+def _pec_extraer_pulsos(texto):
+    s = "" if texto is None else str(texto)
+    u = s.upper()
+    p = u.find("P")
+    if p < 0: return ""
+    numero = ""
+    i = p - 1
+    while i >= 0:
+        ch = u[i]
+        if ch.isdigit():
+            numero = ch + numero
+        elif ch == " ":
+            if numero: break
+        else:
+            break
+        i -= 1
+    return f"{numero} PULSOS" if numero else ""
+
+
+# ---------- Parsing TMP para Protector inferior/upper ----------
+def _pec_parse_prt_sel_tmp(desc):
+    """
+    MODELO_PRT_SEL = primera palabra después de 'TMP ' (hasta espacio o coma)
+    SERIE_DIAM_PRT_SEL = Val(Mid entre ' N' y 'TMP')
+    """
+    if desc is None: return "", ""
+    s = str(desc)
+    if not s: return "", ""
+    p_tmp = _pec_instr(1, s, "TMP", ci=False)
+    if p_tmp == 0: return "", ""
+    resto = s[p_tmp - 1 + 3:]
+    coma = resto.find(",")
+    if coma >= 0:
+        resto = resto[:coma]
+    resto = resto.strip()
+    sp = resto.find(" ")
+    modelo = resto[:sp] if sp >= 0 else resto
+    p_sn = _pec_instr(1, s, " N", ci=False)
+    serie_diam = ""
+    if p_sn > 0 and p_tmp > 0:
+        v = _pec_val(s[p_sn+1:p_tmp-1])
+        if v != 0:
+            serie_diam = v
+    return modelo, serie_diam
+
+
+# ---------- Concat: conector superficie / accesorios protectores ----------
+def _pec_unir_conector_superficie(es_list, pozo, campo):
+    if pozo is None or campo not in ("DESCRIPCION", "NO_SERIE"):
+        return ""
+    pozo_t = str(pozo).strip()
+    vistos = []
+    for r in es_list:
+        rp = r.get("POZO_ID")
+        if rp is None or str(rp).strip() != pozo_t:
+            continue
+        equipo = (r.get("EQUIPO") or "").upper()
+        if "CONECTOR DE SUPERFICIE" in equipo or "CONECTOR DE SUPERFICE" in equipo:
+            v = r.get(campo)
+            if v is not None:
+                t = str(v).strip()
+                if t and t not in vistos:
+                    vistos.append(t)
+    return " | ".join(vistos)
+
+
+_PEC_PATRONES_PROTECTORES = (
+    "PROTECTORES CABLE",
+    "PROTECTOR BLAST JOINT CABLE",
+    "PROTECTORES BLAST JOINT",
+    "PROTECTORES CABLE / MID JOINT",
+    "PROTECTORES DE CABLE",
+    "PROTECTORES DE CABLE/EQUIPO",
+    "PROTECTORES MLP",
+)
+
+def _pec_concat_accesorios_inst(acc_list, pozo, no_inst, campo):
+    if pozo is None or campo not in ("DESCRIPCION", "CANTIDAD", "PROPIEDAD"):
+        return ""
+    pozo_t = str(pozo).strip()
+    inst_t = "" if no_inst is None else str(no_inst).strip()
+    partes = []
+    for r in acc_list:
+        rp = "" if r.get("POZO_ID") is None else str(r.get("POZO_ID")).strip()
+        ri = "" if r.get("NO_INSTALACION") is None else str(r.get("NO_INSTALACION")).strip()
+        if rp != pozo_t or ri != inst_t:
+            continue
+        acc_txt = (r.get("ACCESORIOS") or "").upper()
+        if not any(pat in acc_txt for pat in _PEC_PATRONES_PROTECTORES):
+            continue
+        v = r.get(campo)
+        if v is None: continue
+        t = str(v).strip()
+        if t: partes.append(t)
+    return " | ".join(partes)
+
+
+# ---------- Predicados de equipo ----------
+def _pec_equipo_contiene(equipo, *patrones):
+    if equipo is None: return False
+    e = str(equipo).upper()
+    return any(p.upper() in e for p in patrones)
+
+def _pec_equipo_es_motor(equipo):
+    """Lista exacta del VBA para 'IN' de MOTOR."""
+    if equipo is None: return False
+    return str(equipo).strip().upper() in {
+        "MOTOR", "MOTOR TANDEM", "MOTOR TANDEM O SUP",
+        "MOTOR UNICO/SUP", "MOTOR UNICO / SUP", "MOTOR UNICO / SUP.",
+        "MOTOR UPPER",
+    }
+
+def _pec_max_in(rows, key):
+    """Equivalente a Max([campo]) de SQL."""
+    best = None
+    for r in rows:
+        v = r.get(key)
+        if v is None: continue
+        s = str(v)
+        if best is None or s > best:
+            best = s
+    return best
+
+
+# =============================================================
+# _merge_title  (versión actualizada con Univers 47 CondensedLight)
+# Si ya tenías esta función en tu appp.py, BÓRRALA y usa esta.
+# =============================================================
+def _merge_title(ws, row, c1, c2, title, fill, font_color=PEC_HEADER_FONT):
+    ws.merge_cells(start_row=row, start_column=c1,
+                   end_row=row,   end_column=c2)
+    cell = ws.cell(row, c1)
+    cell.value = title
+    cell.fill = PatternFill("solid", fgColor=fill)
+    cell.font = Font(name=PEC_FONT_NAME, bold=True, color=font_color)
+    cell.alignment = Alignment(horizontal="center",
+                               vertical="center",
+                               wrap_text=True)
+
+
+# =============================================================
+# Llenado uniforme de bombas
+# =============================================================
+def _pec_llenar_bomba(ws, dict_pozos, ef_by_pozo, patron,
+                      col_modelo, col_etapas, col_tipo,
+                      col_serie_diam, col_serie):
+    """
+    Lee la primera EQUIPOFONDO_INSTALACION cuyo EQUIPO contiene `patron`
+    y escribe en las 5 columnas pasadas (en el orden VBA del llamador).
+    """
+    for pozo, idx in dict_pozos.items():
+        out_row = idx + (PEC_DATA_START - 1)
+        equipos = ef_by_pozo.get(pozo, [])
+        eq = next((r for r in equipos if _pec_equipo_contiene(r.get("EQUIPO"), patron)), {})
+        if not eq:
+            continue
+        desc = eq.get("DESCRIPCION") or ""
+        ws.cell(out_row, col_modelo).value     = _excel_safe_value(_pec_primer_token_lp(desc))
+        ws.cell(out_row, col_etapas).value     = _excel_safe_value(_pec_extraer_etapas_lp(desc))
+        ws.cell(out_row, col_tipo).value       = _excel_safe_value(_pec_segundo_token_lp(desc))
+        ws.cell(out_row, col_serie_diam).value = _excel_safe_value(_pec_codigo_segun_modelo_lp(desc))
+        ws.cell(out_row, col_serie).value      = _excel_safe_value(eq.get("NO_SERIE") or "")
+
+
+# =============================================================
+# Headers PEC (128 cols, orden VBA)
+# =============================================================
+PEC_HEADERS = {
+    1: "Pozo", 2: "ZONA", 3: "CAMPO", 4: "LOCACION", 5: "Arena",
+    6: "Inst. Total", 7: "Start Date", 8: "Stop Date", 9: "Pulling Date",
+    10: "Year Start", 11: "Year Stop", 12: "Year Pull", 13: "Downtime (Días)",
+    14: "Today", 15: "Run life", 16: "FAILURE Status", 17: "Tiempo en Pozo",
+    18: "ESP STATUS", 19: "CLIENTE ", 20: "CONTRATO", 21: "MODALIDAD CONTRACTUAL",
+    22: "Mfg.", 23: "Modelo Sensor", 24: "Serie Sensor",
+    25: "HP Motor", 26: "V Motor", 27: "A Motor", 28: "Tipo Motor",
+    29: "RPM Motor", 30: "Serie (diam) Motor", 31: "Serie Motor",
+    32: "Modelo PRT/SEL", 33: "Serie (diam) PRT/SEL", 34: "Serie PRT/SEL",
+    35: "Modelo PRT/SEL", 36: "Serie (diam) PRT/SEL", 37: "Serie PRT/SEL",
+    38: "Modelo ITK/SG", 39: "Serie (diam) ", 40: "Serie ITK/SG",
+    41: "Modelo GH", 42: "Serie (diam) GH", 43: "Serie GH", 44: "# Etapas GH",
+    45: "Modelo LP", 46: "# Etapas LP", 47: "Tipo LP", 48: "Serie (diam) ", 49: "Serie LP",
+    50: "Modelo MP", 51: "# Etapas MP", 52: "Serie (diam) ", 53: "Tipo MP", 54: "Serie MP",
+    55: "Modelo MP", 56: "# Etapas MP", 57: "Tipo MP", 58: "Serie (diam) ", 59: "Serie MP",
+    60: "Modelo MP", 61: "# Etapas MP", 62: "Tipo MP", 63: "Serie (diam) ", 64: "Serie MP",
+    65: "Modelo UP", 66: "# Etapas UP", 67: "Tipo UP", 68: "Serie (diam) ", 69: "Serie UP",
+    70: "Marca Conector", 71: "Upper Conector", 72: "Lower Conector", 73: "Mandreal",
+    74: "Serie 1 Cable", 75: "Serie 2 Cable", 76: "Serie 3 Cable", 77: "PROPIEDAD",
+    78: "Tipo 1 Cable", 79: "Tipo 2 Cable", 80: "Tipo 3 Cable", 81: "Tipo 4 Cable",
+    82: "Long 1 Cable (Pies)", 83: "Long 2 Cable (Pies)",
+    84: "Long 3 Cable (Pies)", 85: "Long 4 Cable (Pies)",
+    86: "MANDREL DOSIFICADOR DE QUIMICOS", 87: "MANEJADOR DE SOLIDOS",
+    88: "PROPIEDAD ACC", 89: "MARCA PTR", 90: "CANTIDAD PTR", 91: "PROPIEDAD PTR",
+    92: "MARCA  SDT", 93: "SERIAL  SDT", 94: "NOM. CONT.  SDT", 95: "KVA  SDT",
+    96: "PULSOS  SDT", 97: "PROPIEDAD  SDT",
+    98: "MARCA  SHIFT", 99: "SERIAL  SHIFT", 100: "NOM. CONT.  SHIFT",
+    101: "KVA  SHIFT", 102: "PULSOS  SHIFT", 103: "PROPIEDAD  SHIFT",
+    104: "MARCA VSD", 105: "SERIAL VSD", 106: "NOM. CONT.  VSD",
+    107: "KVA VSD", 108: "PULSOS VSD", 109: "PROPIEDAD VSD",
+    110: "MARCA SUT", 111: "SERIAL SUT", 112: "NOM. CONT.  SUT",
+    113: "KVA SUT", 114: "PROPIEDAD SUT",
+    115: "Modo de Falla General", 116: "Modo de Falla Especifico",
+    117: "Componente en Falla", 118: "Sub-Componente en Falla",
+    119: "Mecanismo de Falla General ", 120: "Mecanismo de Falla Específico",
+    121: "Causa de Falla General", 122: "Causa de Falla Especifica",
+    123: "Comentarios Pull - Tear Down", 124: "Falla directa ",
+    125: "Falla indirecta", 126: "Plan de accion de fallas directas ",
+    127: "PROPIEDAD", 128: "CABLE RENTA",
+}
+
+
+# =============================================================
+# FUNCIÓN PRINCIPAL: REPORTE PEC
+# =============================================================
 def _build_reporte_pec_workbook(sb):
     """
-    REPORTE PEC (Comando74_Click) - versión Python.
+    REPORTE PEC (Comando74_Click) - escribe por POSICIÓN de columna,
+    replicando exactamente el VBA original.
+
+    Estilo:
+      - Encabezados (filas 1, 2 y 3) en fondo #000080 con letra blanca.
+      - Toda la hoja (encabezados + datos) en fuente Univers 47 CondensedLight.
     """
     wb = Workbook()
     ws = wb.active
     ws.title = "REPORTE PEC"
     ws.sheet_view.showGridLines = False
 
-    # Encabezados exactos del VBA (128 cols)
-    headers = {
-        1: "Pozo",
-        2: "ZONA",
-        3: "CAMPO",
-        4: "LOCACION",
-        5: "Arena",
-        6: "Inst. Total",
-        7: "Start Date",
-        8: "Stop Date",
-        9: "Pulling Date",
-        10: "Year Start",
-        11: "Year Stop",
-        12: "Year Pull",
-        13: "Downtime (Días)",
-        14: "Today",
-        15: "Run life",
-        16: "FAILURE Status",
-        17: "Tiempo en Pozo",
-        18: "ESP STATUS",
-        19: "CLIENTE ",
-        20: "CONTRATO",
-        21: "MODALIDAD CONTRACTUAL",
-        22: "Mfg.",
-        23: "Modelo Sensor",
-        24: "Serie Sensor",
-        25: "HP Motor",
-        26: "V Motor",
-        27: "A Motor",
-        28: "Tipo Motor",
-        29: "RPM Motor",
-        30: "Serie (diam) Motor",
-        31: "Serie Motor",
-        32: "Modelo PRT/SEL",
-        33: "Serie (diam) PRT/SEL",
-        34: "Serie PRT/SEL",
-        35: "Modelo PRT/SEL",
-        36: "Serie (diam) PRT/SEL",
-        37: "Serie PRT/SEL",
-        38: "Modelo ITK/SG",
-        39: "Serie (diam) ",
-        40: "Serie ITK/SG",
-        41: "Modelo GH",
-        42: "Serie (diam) GH",
-        43: "Serie GH",
-        44: "# Etapas GH",
-        45: "Modelo LP",
-        46: "# Etapas LP",
-        47: "Tipo LP",
-        48: "Serie (diam) ",
-        49: "Serie LP",
-        50: "Modelo MP",
-        51: "# Etapas MP",
-        52: "Serie (diam) ",
-        53: "Tipo MP",
-        54: "Serie MP",
-        55: "Modelo MP",
-        56: "# Etapas MP",
-        57: "Tipo MP",
-        58: "Serie (diam) ",
-        59: "Serie MP",
-        60: "Modelo MP",
-        61: "# Etapas MP",
-        62: "Tipo MP",
-        63: "Serie (diam) ",
-        64: "Serie MP",
-        65: "Modelo UP",
-        66: "# Etapas UP",
-        67: "Tipo UP",
-        68: "Serie (diam) ",
-        69: "Serie UP",
-        70: "Marca Conector",
-        71: "Upper Conector",
-        72: "Lower Conector",
-        73: "Mandreal",
-        74: "Serie 1 Cable",
-        75: "Serie 2 Cable",
-        76: "Serie 3 Cable",
-        77: "PROPIEDAD",
-        78: "Tipo 1 Cable",
-        79: "Tipo 2 Cable",
-        80: "Tipo 3 Cable",
-        81: "Tipo 4 Cable",
-        82: "Long 1 Cable (Pies)",
-        83: "Long 2 Cable (Pies)",
-        84: "Long 3 Cable (Pies)",
-        85: "Long 4 Cable (Pies)",
-        86: "MANDREL DOSIFICADOR DE QUIMICOS",
-        87: "MANEJADOR DE SOLIDOS",
-        88: "PROPIEDAD ACC",
-        89: "MARCA PTR",
-        90: "CANTIDAD PTR",
-        91: "PROPIEDAD PTR",
-        92: "MARCA  SDT",
-        93: "SERIAL  SDT",
-        94: "NOM. CONT.  SDT",
-        95: "KVA  SDT",
-        96: "PULSOS  SDT",
-        97: "PROPIEDAD  SDT",
-        98: "MARCA  SHIFT",
-        99: "SERIAL  SHIFT",
-        100: "NOM. CONT.  SHIFT",
-        101: "KVA  SHIFT",
-        102: "PULSOS  SHIFT",
-        103: "PROPIEDAD  SHIFT",
-        104: "MARCA VSD",
-        105: "SERIAL VSD",
-        106: "NOM. CONT.  VSD",
-        107: "KVA VSD",
-        108: "PULSOS VSD",
-        109: "PROPIEDAD VSD",
-        110: "MARCA SUT",
-        111: "SERIAL SUT",
-        112: "NOM. CONT.  SUT",
-        113: "KVA SUT",
-        114: "PROPIEDAD SUT",
-        115: "Modo de Falla General",
-        116: "Modo de Falla Especifico",
-        117: "Componente en Falla",
-        118: "Sub-Componente en Falla",
-        119: "Mecanismo de Falla General ",
-        120: "Mecanismo de Falla Específico",
-        121: "Causa de Falla General",
-        122: "Causa de Falla Especifica",
-        123: "Comentarios Pull - Tear Down",
-        124: "Falla directa ",
-        125: "Falla indirecta",
-        126: "Plan de accion de fallas directas ",
-        127: "PROPIEDAD",
-        128: "CABLE RENTA",
-    }
+    # ---------- 1) Cargar tablas ----------
+    ci_rows  = _fetch_all_rows(sb, "CLIENTE_INSTALACION",        select="*")
+    ip_rows  = _fetch_all_rows(sb, "INFPOZO2_INSTALACION",       select="*")
+    ef_rows  = _fetch_all_rows(sb, "EQUIPOFONDO_INSTALACION",    select="*")
+    es_rows  = _fetch_all_rows(sb, "EQUISUPERFICIE_INSTALACION", select="*")
+    acc_rows = _fetch_all_rows(sb, "ACCESORIOS_INSTALACION",     select="*")
+    st_rows  = _fetch_all_rows(sb, "STATUS",                     select="*")
 
-    pozo_rows = _fetch_all_rows(sb, "CLIENTE_INSTALACION", select="*")
-    data2_rows = _fetch_all_rows(sb, "DATA_2", select="*")
-    status_rows = _fetch_all_rows(sb, "STATUS", select="*")
-    pull_rows = _fetch_all_rows(sb, "CLIENTE_PULL", select="*")
-    ef_rows = _fetch_all_rows(sb, "EQUIPOFONDO_INSTALACION", select="*")
-    es_rows = _fetch_all_rows(sb, "EQUISUPERFICIE_INSTALACION", select="*")
-
-    # Order of wells
+    # ---------- 2) Lista de pozos en orden de aparición ----------
     pozo_order = []
     seen = set()
-    for r in pozo_rows:
+    for r in ci_rows:
         p = _normalize_pozo_key(r.get("POZO_ID"))
         if _looks_like_pozo(p) and p not in seen:
             seen.add(p); pozo_order.append(p)
-    for r in data2_rows:
-        p = _normalize_pozo_key(r.get("POZO"))
-        if _looks_like_pozo(p) and p not in seen:
-            seen.add(p); pozo_order.append(p)
+    dict_pozos = {p: i + 1 for i, p in enumerate(pozo_order)}
 
-    ci_by_pozo = _build_index_first(pozo_rows)
-    d2_by_pozo = _build_index_first([{
-        "POZO_ID": r.get("POZO"),
-        **r
-    } for r in data2_rows])
-    status_by_pozo = _build_index_latest(status_rows, date_field="STOP_DATE")
-    pull_by_pozo = _build_index_latest(pull_rows, date_field="FECHA_INICIO")
-    ef_by_pozo = _build_index_first(ef_rows)
-    es_by_pozo = _build_index_first(es_rows)
+    # ---------- 3) Índices por pozo ----------
+    ip_by_pozo = {}
+    for r in ip_rows:
+        p = _normalize_pozo_key(r.get("POZO_ID"))
+        if p and p not in ip_by_pozo: ip_by_pozo[p] = r
 
-    # Build row data
-    row_data = {}
+    ef_by_pozo = {}
+    for r in ef_rows:
+        p = _normalize_pozo_key(r.get("POZO_ID"))
+        if p: ef_by_pozo.setdefault(p, []).append(r)
+
+    es_by_pozo = {}
+    for r in es_rows:
+        p = _normalize_pozo_key(r.get("POZO_ID"))
+        if p: es_by_pozo.setdefault(p, []).append(r)
+
+    st_by_pozo = {}
+    for r in st_rows:
+        p = _normalize_pozo_key(r.get("POZO_ID"))
+        if p and p not in st_by_pozo: st_by_pozo[p] = r
+
+    ci_by_pozo = {}
+    for r in ci_rows:
+        p = _normalize_pozo_key(r.get("POZO_ID"))
+        if p and p not in ci_by_pozo: ci_by_pozo[p] = r
+
+    # ---------- 4) Bandas de títulos (filas 1-2)  ----------
+    _merge_title(ws, 1, 32,  37,  "PROTECTOR/SELLO",                         PEC_HEADER_FILL)
+    _merge_title(ws, 1, 45,  69,  "BOMBAS",                                  PEC_HEADER_FILL)
+    _merge_title(ws, 1, 92,  114, "EQUIPO ELÉCTRICO DE SUPERFICIE",          PEC_HEADER_FILL)
+    _merge_title(ws, 1, 115, 122, "ESTRUCTURA DE DATOS DE EVENTOS DE FALLA", PEC_HEADER_FILL)
+
+    sub_titles = [
+        (23, 24,  "SENSOR"),
+        (25, 31,  "MOTOR"),
+        (32, 34,  "INFERIOR"),
+        (35, 37,  "SUPERIOR"),
+        (38, 40,  "INTAKE / SEP.GAS"),
+        (41, 44,  "MANEJADOR DE GAS"),
+        (45, 49,  "INFERIOR"),
+        (50, 54,  "INTERMEDIA"),
+        (55, 59,  "INTERMEDIA"),
+        (60, 64,  "INTERMEDIA"),
+        (65, 69,  "SUPERIOR"),
+        (70, 73,  "CONECTOR"),
+        (74, 84,  "CABLE"),
+        (86, 88,  "ACCESORIOS"),
+        (89, 91,  "PROTECTORES"),
+        (92, 97,  "TRAFO. REDUCTOR (SDT)"),
+        (98, 103, "TRAFO. SHIFT"),
+        (104,109, "VARIADOR FRECUENCIA (VSD)"),
+        (110,114, "TRANSFORMADOR  SALIDA ELEVADOR (SUT)"),
+        (115,116, "MODO DE FALLA"),
+        (117,118, "COMPONENTE / ITEM EN FALLA"),
+        (119,120, "MECANISMO DE FALLA"),
+        (121,122, "CAUSA DE FALLA"),
+    ]
+    for c1, c2, txt in sub_titles:
+        _merge_title(ws, 2, c1, c2, txt, PEC_HEADER_FILL, PEC_HEADER_FONT)
+
+    # Header (fila 3)
+    for col, h in PEC_HEADERS.items():
+        ws.cell(PEC_HEADER_ROW, col).value = h
+
     today = datetime.now()
-    for pozo in pozo_order:
-        ci = ci_by_pozo.get(pozo, {})
-        d2 = d2_by_pozo.get(pozo, {})
-        st = status_by_pozo.get(pozo, {})
-        pu = pull_by_pozo.get(pozo, {})
-        ef_list = [r for r in ef_rows if _normalize_pozo_key(r.get("POZO_ID")) == pozo]
-        es_list = [r for r in es_rows if _normalize_pozo_key(r.get("POZO_ID")) == pozo]
+    today_str = today.strftime("%d-%m-%Y")
 
-        def _first_match(rows, patterns):
-            for r in rows:
-                if _match_equipo(r.get("EQUIPO"), patterns):
+    # ============================================================
+    # 5) INFO POZO  -> cols 1, 4(CAMPO), 5(ZONA), 7, 10, 14, 19, 21
+    # ============================================================
+    for pozo in pozo_order:
+        out_row = dict_pozos[pozo] + (PEC_DATA_START - 1)
+        ci = ci_by_pozo.get(pozo, {})
+        ip = ip_by_pozo.get(pozo, {})
+
+        ws.cell(out_row, 1).value  = pozo
+        ws.cell(out_row, 4).value  = _excel_safe_value(ci.get("CAMPO") or "")
+        ws.cell(out_row, 5).value  = _excel_safe_value(ip.get("ZONA_PRODUCTORA_INICIAL") or "")
+        ws.cell(out_row, 7).value  = _excel_safe_value(ci.get("FECHA_ARRANQUE") or "")
+
+        fa = ci.get("FECHA_ARRANQUE")
+        ys = ""
+        if fa:
+            try:
+                ys = (fa.year if hasattr(fa, "year")
+                      else datetime.fromisoformat(str(fa)[:10]).year)
+            except Exception:
+                m = re.search(r"\d{4}", str(fa))
+                ys = int(m.group(0)) if m else ""
+        ws.cell(out_row, 10).value = _excel_safe_value(ys)
+        ws.cell(out_row, 14).value = today_str
+        ws.cell(out_row, 19).value = _excel_safe_value(ci.get("CLIENTE") or "")
+        ws.cell(out_row, 21).value = _excel_safe_value(ci.get("TIPO_NEGOCIO") or "")
+
+    # ============================================================
+    # 6) SENSOR + MOTOR  -> cols 23..31  (Max() en VBA)
+    # ============================================================
+    for pozo in pozo_order:
+        out_row = dict_pozos[pozo] + (PEC_DATA_START - 1)
+        equipos = ef_by_pozo.get(pozo, [])
+
+        sensores = [r for r in equipos
+                    if (r.get("EQUIPO") or "").strip().upper() == "SENSOR DE FONDO"]
+        motores  = [r for r in equipos if _pec_equipo_es_motor(r.get("EQUIPO"))]
+
+        desc_sensor    = _pec_max_in(sensores, "DESCRIPCION") or ""
+        no_serie_sens  = _pec_max_in(sensores, "NO_SERIE")    or ""
+        desc_motor     = _pec_max_in(motores,  "DESCRIPCION") or ""
+        no_serie_motor = _pec_max_in(motores,  "NO_SERIE")    or ""
+
+        ws.cell(out_row, 23).value = _excel_safe_value(desc_sensor)
+        ws.cell(out_row, 24).value = _excel_safe_value(no_serie_sens)
+        ws.cell(out_row, 25).value = _excel_safe_value(_pec_extraer_hp(desc_motor))
+        ws.cell(out_row, 26).value = _excel_safe_value(_pec_extraer_v(desc_motor))
+        ws.cell(out_row, 27).value = _excel_safe_value(_pec_extraer_a(desc_motor))
+        ws.cell(out_row, 28).value = _excel_safe_value(_pec_extraer_tipo_motor(desc_motor))
+        ws.cell(out_row, 29).value = _excel_safe_value(_pec_extraer_rpm(desc_motor))
+        ws.cell(out_row, 30).value = _excel_safe_value(_pec_extraer_serie_diam_motor(desc_motor))
+        ws.cell(out_row, 31).value = _excel_safe_value(no_serie_motor)
+
+    # ============================================================
+    # 7) PROTECTOR INFERIOR  -> cols 32..34
+    # ============================================================
+    for pozo in pozo_order:
+        out_row = dict_pozos[pozo] + (PEC_DATA_START - 1)
+        equipos = ef_by_pozo.get(pozo, [])
+        prt = next((r for r in equipos
+                    if _pec_equipo_contiene(r.get("EQUIPO"),
+                                            "PROTECTOR", "PROT. INFERIOR",
+                                            "PROTECTOR LOWER")), {})
+        modelo, serie_diam = _pec_parse_prt_sel_tmp(prt.get("DESCRIPCION") or "")
+        ws.cell(out_row, 32).value = _excel_safe_value(modelo)
+        ws.cell(out_row, 33).value = _excel_safe_value(serie_diam)
+        ws.cell(out_row, 34).value = _excel_safe_value(prt.get("NO_SERIE") or "")
+
+    # ============================================================
+    # 8) PROTECTOR UPPER  -> cols 35..37
+    # ============================================================
+    for pozo in pozo_order:
+        out_row = dict_pozos[pozo] + (PEC_DATA_START - 1)
+        equipos = ef_by_pozo.get(pozo, [])
+        prt = next((r for r in equipos
+                    if _pec_equipo_contiene(r.get("EQUIPO"),
+                                            "PROT. TANDEM O SUP",
+                                            "PROT. TANDEM O SUP.",
+                                            "PROTECTOR UPPER")), {})
+        modelo, serie_diam = _pec_parse_prt_sel_tmp(prt.get("DESCRIPCION") or "")
+        ws.cell(out_row, 35).value = _excel_safe_value(modelo)
+        ws.cell(out_row, 36).value = _excel_safe_value(serie_diam)
+        ws.cell(out_row, 37).value = _excel_safe_value(prt.get("NO_SERIE") or "")
+
+    # ============================================================
+    # 9) GAS SEPARADOR / INTAKE  -> cols 38..40
+    # ============================================================
+    for pozo in pozo_order:
+        out_row = dict_pozos[pozo] + (PEC_DATA_START - 1)
+        equipos = ef_by_pozo.get(pozo, [])
+        itk = next((r for r in equipos
+                    if _pec_equipo_contiene(r.get("EQUIPO"), "GAS SEPARADOR / INTAKE")), {})
+        desc = itk.get("DESCRIPCION") or ""
+        ws.cell(out_row, 38).value = _excel_safe_value(desc)
+        ws.cell(out_row, 39).value = _excel_safe_value(_pec_extraer_serie_diam_primera_n(desc))
+        ws.cell(out_row, 40).value = _excel_safe_value(itk.get("NO_SERIE") or "")
+
+    # cols 41..44 (Manejador de gas / GH) -> vacías
+
+    # ============================================================
+    # 10) BOMBA INFERIOR (45..49)
+    # ============================================================
+    _pec_llenar_bomba(ws, dict_pozos, ef_by_pozo, "BOMBA INFERIOR",
+                      45, 46, 47, 48, 49)
+
+    # ============================================================
+    # 11) BOMBA MEDIA 1 (50..54)  -- ORDEN VBA distinto
+    #     50 Modelo, 51 Etapas, 52 COD, 53 Tipo, 54 Serie
+    # 12) BOMBA MEDIA 2 (55..59) -> 55 Mod, 56 Et, 57 Tipo, 58 COD, 59 Serie
+    # 13) BOMBA MEDIA 3 (60..64) -> 60 Mod, 61 Et, 62 Tipo, 63 COD, 64 Serie
+    # ============================================================
+    _pec_llenar_bomba(ws, dict_pozos, ef_by_pozo, "BOMBA MEDIA 1",
+                      50, 51, 53, 52, 54)  # OJO: 52=COD, 53=Tipo
+    _pec_llenar_bomba(ws, dict_pozos, ef_by_pozo, "BOMBA MEDIA 2",
+                      55, 56, 57, 58, 59)
+    _pec_llenar_bomba(ws, dict_pozos, ef_by_pozo, "BOMBA MEDIA 3",
+                      60, 61, 62, 63, 64)
+
+    # ============================================================
+    # 14) BOMBA SUPERIOR (65..69)
+    # ============================================================
+    _pec_llenar_bomba(ws, dict_pozos, ef_by_pozo, "BOMBA SUPERIOR",
+                      65, 66, 67, 68, 69)
+
+    # ============================================================
+    # 15) CONECTOR DE SUPERFICIE  -> cols 70, 71
+    # ============================================================
+    for pozo in pozo_order:
+        out_row = dict_pozos[pozo] + (PEC_DATA_START - 1)
+        es = es_by_pozo.get(pozo, [])
+        marca = _pec_unir_conector_superficie(es, pozo, "DESCRIPCION")
+        upper = _pec_unir_conector_superficie(es, pozo, "NO_SERIE")
+        if marca: ws.cell(out_row, 70).value = _excel_safe_value(marca)
+        if upper: ws.cell(out_row, 71).value = _excel_safe_value(upper)
+
+    # ============================================================
+    # 16) CABLES  -> cols 74..85
+    # ============================================================
+    for pozo in pozo_order:
+        out_row = dict_pozos[pozo] + (PEC_DATA_START - 1)
+        equipos = ef_by_pozo.get(pozo, [])
+
+        def _first_cable(pat):
+            for r in equipos:
+                if _pec_equipo_contiene(r.get("EQUIPO"), pat):
                     return r
             return {}
 
-        def _pack_equipo_fondo(patterns):
-            return _first_match(ef_list, patterns)
+        c_inf  = _first_cable("CABLE INFERIOR")
+        c_med1 = _first_cable("CABLE MEDIO 1")
+        c_med2 = _first_cable("CABLE MEDIO 2")
+        c_sup  = _first_cable("CABLE SUPERIOR")
 
-        def _pack_surface(patterns):
-            return _first_match(es_list, patterns)
+        ws.cell(out_row, 74).value = _excel_safe_value(c_inf.get("NO_SERIE")  or "")
+        ws.cell(out_row, 75).value = _excel_safe_value(c_med1.get("NO_SERIE") or "")
+        ws.cell(out_row, 76).value = _excel_safe_value(c_sup.get("NO_SERIE")  or "")
 
-        # info
-        info = {
-            "Pozo": pozo,
-            "ZONA": None,
-            "CAMPO": None,
-            "LOCACION": _first_nonempty(ci.get("CAMPO"), d2.get("CAMPO")),
-            "Arena": _first_nonempty(d2.get("ARENA"), ci.get("ZONA_PRODUCTORA_INICIAL"), d2.get("ZONA_PRODUCTORA_INICIAL")),
-            "Inst. Total": _first_nonempty(ci.get("NO_INSTALACION"), d2.get("RUN")),
-            "Start Date": _first_nonempty(ci.get("FECHA_ARRANQUE"), d2.get("RUN_ARRANQUE")),
-            "Stop Date": st.get("STOP_DATE"),
-            "Pulling Date": pu.get("FECHA_INICIO"),
-            "Year Start": _as_date_or_none(_first_nonempty(ci.get("FECHA_ARRANQUE"), d2.get("RUN_ARRANQUE"))).year if _as_date_or_none(_first_nonempty(ci.get("FECHA_ARRANQUE"), d2.get("RUN_ARRANQUE"))) else None,
-            "Year Stop": _as_date_or_none(st.get("STOP_DATE")).year if _as_date_or_none(st.get("STOP_DATE")) else None,
-            "Year Pull": _as_date_or_none(pu.get("FECHA_INICIO")).year if _as_date_or_none(pu.get("FECHA_INICIO")) else None,
-            "Downtime (Días)": None,
-            "Today": today,
-            "Run life": pu.get("TIEMPO_FUN"),
-            "FAILURE Status": st.get("RAZON_STOP"),
-            "Tiempo en Pozo": None,
-            "ESP STATUS": _first_nonempty(ci.get("STATUS"), d2.get("ESP_STATUS")),
-            "CLIENTE ": _first_nonempty(ci.get("CLIENTE"), d2.get("CLIENTE")),
-            "CONTRATO": None,
-            "MODALIDAD CONTRACTUAL": _first_nonempty(ci.get("TIPO_NEGOCIO"), d2.get("MODO_CONTRATO")),
-        }
+        propiedad = " ".join([
+            str(c_sup.get("PROPIEDAD")  or "").strip(),
+            str(c_med1.get("PROPIEDAD") or "").strip(),
+            str(c_inf.get("PROPIEDAD")  or "").strip(),
+        ]).strip()
+        ws.cell(out_row, 77).value = _excel_safe_value(propiedad)
 
-        # sensor/motor
-        sensor = _pack_equipo_fondo(["SENSOR DE FONDO"])
-        motor = _pack_equipo_fondo(["MOTOR"])
-        protector_inf = _pack_equipo_fondo(["PROTECTOR", "PROT. INFERIOR", "PROT.INFERIOR", "PROTECTOR LOWER"])
-        protector_sup = _pack_equipo_fondo(["PROT. TANDEM O SUP", "PROTECTOR UPPER", "PROTECTOR TANDEM"])
-        itk = _pack_equipo_fondo(["GAS SEPARADOR / INTAKE"])
-        lp = _pack_equipo_fondo(["BOMBA INFERIOR"])
-        mp1 = _pack_equipo_fondo(["BOMBA MEDIA 1"])
-        mp2 = _pack_equipo_fondo(["BOMBA MEDIA 2"])
-        mp3 = _pack_equipo_fondo(["BOMBA MEDIA 3"])
-        mp4 = _pack_equipo_fondo(["BOMBA MEDIA 4"])
-        up = _pack_equipo_fondo(["BOMBA SUPERIOR"])
-        conector = _pack_surface(["CONECTOR DE SUPERFICIE", "CONECTOR SUPERFICIE"])
-        cable_sup = _pack_equipo_fondo(["CABLE SUPERIOR"])
-        cable_mid2 = _pack_equipo_fondo(["CABLE MEDIO 2"])
-        cable_mid1 = _pack_equipo_fondo(["CABLE MEDIO 1"])
-        cable_inf = _pack_equipo_fondo(["CABLE INFERIOR"])
-        cable_mle = _pack_equipo_fondo(["CABLE EXTENSIÓN (MLE)"])
-        cable_total = _pack_equipo_fondo(["CABLE TOTAL"])
-        sdt = _pack_surface(["TRANSFORMADOR REDUCTOR", "SDT"])
-        shift = _pack_surface(["VARIADOR DE FRECUENCIA", "SHIFT"])
-        vsd = _pack_surface(["VARIADOR DE FRECUENCIA", "VSD"])
-        sut = _pack_surface(["TRANSFORMADOR ELEVADOR", "SUT"])
-        choke = _pack_surface(["CHOKE"])
-        soporte = _pack_surface(["SOPORTE CHOKE Y PANEL"])
-        controlador = _pack_surface(["CONTROLADOR"])
-        monitoreo = _pack_surface(["SISTEMA DE MONITOREO"])
-        caja = _pack_surface(["CAJA DE VENTEO"])
-        panel_sensor = _pack_surface(["PANEL DEL SENSOR"])
+        ws.cell(out_row, 78).value = _excel_safe_value(c_inf.get("DESCRIPCION")  or "")
+        ws.cell(out_row, 79).value = _excel_safe_value(c_med1.get("DESCRIPCION") or "")
+        ws.cell(out_row, 80).value = _excel_safe_value(c_med2.get("DESCRIPCION") or "")
+        ws.cell(out_row, 81).value = _excel_safe_value(c_sup.get("DESCRIPCION")  or "")
 
-        row = {
-            "Pozo": pozo,
-            "ZONA": info["ZONA"],
-            "CAMPO": info["CAMPO"],
-            "LOCACION": info["LOCACION"],
-            "Arena": info["Arena"],
-            "Inst. Total": info["Inst. Total"],
-            "Start Date": info["Start Date"],
-            "Stop Date": info["Stop Date"],
-            "Pulling Date": info["Pulling Date"],
-            "Year Start": info["Year Start"],
-            "Year Stop": info["Year Stop"],
-            "Year Pull": info["Year Pull"],
-            "Downtime (Días)": info["Downtime (Días)"],
-            "Today": info["Today"],
-            "Run life": info["Run life"],
-            "FAILURE Status": info["FAILURE Status"],
-            "Tiempo en Pozo": info["Tiempo en Pozo"],
-            "ESP STATUS": info["ESP STATUS"],
-            "CLIENTE ": info["CLIENTE "],
-            "CONTRATO": info["CONTRATO"],
-            "MODALIDAD CONTRACTUAL": info["MODALIDAD CONTRACTUAL"],
-            "Mfg.": sensor.get("DESCRIPCION") or sensor.get("MFG") or "",
-            "Modelo Sensor": sensor.get("DESCRIPCION"),
-            "Serie Sensor": sensor.get("NO_SERIE"),
-            "HP Motor": _extract_hp(motor.get("DESCRIPCION")),
-            "V Motor": _extract_v(motor.get("DESCRIPCION")),
-            "A Motor": _extract_a(motor.get("DESCRIPCION")),
-            "Tipo Motor": _extract_tipo_motor(motor.get("DESCRIPCION")),
-            "RPM Motor": _extract_rpm(motor.get("DESCRIPCION")),
-            "Serie (diam) Motor": _extract_serie_diam_motor(motor.get("DESCRIPCION")),
-            "Serie Motor": motor.get("NO_SERIE"),
-            "Modelo PRT/SEL": protector_inf.get("DESCRIPCION"),
-            "Serie (diam) PRT/SEL": _extract_serie_diam_primera_n(protector_inf.get("DESCRIPCION")),
-            "Serie PRT/SEL": protector_inf.get("NO_SERIE"),
-            "Modelo PRT/SEL_2": protector_sup.get("DESCRIPCION"),
-            "Serie (diam) PRT/SEL_2": _extract_serie_diam_primera_n(protector_sup.get("DESCRIPCION")),
-            "Serie PRT/SEL_2": protector_sup.get("NO_SERIE"),
-            "Modelo ITK/SG": itk.get("DESCRIPCION"),
-            "Serie (diam) ": _extract_serie_diam_primera_n(itk.get("DESCRIPCION")),
-            "Serie ITK/SG": itk.get("NO_SERIE"),
-            "Modelo GH": lp.get("DESCRIPCION"),
-            "Serie (diam) GH": _extract_serie_diam_primera_n(lp.get("DESCRIPCION")),
-            "Serie GH": lp.get("NO_SERIE"),
-            "# Etapas GH": _extract_etapas_lp(lp.get("DESCRIPCION")),
-            "Modelo LP": lp.get("DESCRIPCION"),
-            "# Etapas LP": _extract_etapas_lp(lp.get("DESCRIPCION")),
-            "Tipo LP": _segundo_token_lp(lp.get("DESCRIPCION")),
-            "Serie (diam) _LP": _extract_serie_diam_primera_n(lp.get("DESCRIPCION")),
-            "Serie LP": lp.get("NO_SERIE"),
-            "Modelo MP": mp1.get("DESCRIPCION"),
-            "# Etapas MP": _extract_etapas_lp(mp1.get("DESCRIPCION")),
-            "Serie (diam) _MP": _extract_serie_diam_primera_n(mp1.get("DESCRIPCION")),
-            "Tipo MP": _segundo_token_lp(mp1.get("DESCRIPCION")),
-            "Serie MP": mp1.get("NO_SERIE"),
-            "Modelo MP_2": mp2.get("DESCRIPCION"),
-            "# Etapas MP_2": _extract_etapas_lp(mp2.get("DESCRIPCION")),
-            "Tipo MP_2": _segundo_token_lp(mp2.get("DESCRIPCION")),
-            "Serie (diam) _MP_2": _extract_serie_diam_primera_n(mp2.get("DESCRIPCION")),
-            "Serie MP_2": mp2.get("NO_SERIE"),
-            "Modelo MP_3": mp3.get("DESCRIPCION"),
-            "# Etapas MP_3": _extract_etapas_lp(mp3.get("DESCRIPCION")),
-            "Tipo MP_3": _segundo_token_lp(mp3.get("DESCRIPCION")),
-            "Serie (diam) _MP_3": _extract_serie_diam_primera_n(mp3.get("DESCRIPCION")),
-            "Serie MP_3": mp3.get("NO_SERIE"),
-            "Modelo UP": up.get("DESCRIPCION"),
-            "# Etapas UP": _extract_etapas_lp(up.get("DESCRIPCION")),
-            "Tipo UP": _segundo_token_lp(up.get("DESCRIPCION")),
-            "Serie (diam) _": _extract_serie_diam_primera_n(up.get("DESCRIPCION")),
-            "Serie UP": up.get("NO_SERIE"),
-            "Marca Conector": conector.get("DESCRIPCION"),
-            "Upper Conector": conector.get("NO_SERIE"),
-            "Lower Conector": conector.get("PROPIEDAD"),
-            "Mandreal": _first_nonempty(cable_inf.get("DESCRIPCION"), cable_mle.get("DESCRIPCION")),
-            "Serie 1 Cable": cable_inf.get("NO_SERIE"),
-            "Serie 2 Cable": cable_mid1.get("NO_SERIE"),
-            "Serie 3 Cable": cable_sup.get("NO_SERIE"),
-            "PROPIEDAD": cable_total.get("PROPIEDAD"),
-            "Tipo 1 Cable": cable_inf.get("EQUIPO"),
-            "Tipo 2 Cable": cable_mid1.get("EQUIPO"),
-            "Tipo 3 Cable": cable_mid2.get("EQUIPO"),
-            "Tipo 4 Cable": cable_sup.get("EQUIPO"),
-            "Long 1 Cable (Pies)": cable_inf.get("LONGITUD"),
-            "Long 2 Cable (Pies)": cable_mid1.get("LONGITUD"),
-            "Long 3 Cable (Pies)": cable_mid2.get("LONGITUD"),
-            "Long 4 Cable (Pies)": cable_sup.get("LONGITUD"),
-            "MANDREL DOSIFICADOR DE QUIMICOS": _first_nonempty(cable_mle.get("DESCRIPCION"), d2.get("MANDREL_DOSIFICADOR_QUIMICOS")),
-            "MANEJADOR DE SOLIDOS": _first_nonempty(cable_total.get("DESCRIPCION"), d2.get("MANEJADOR_DE_SOLIDOS")),
-            "PROPIEDAD ACC": _first_nonempty(cable_total.get("PROPIEDAD"), d2.get("PROPIEDAD")),
-            "MARCA PTR": protector_inf.get("DESCRIPCION"),
-            "CANTIDAD PTR": protector_inf.get("CANTIDAD"),
-            "PROPIEDAD PTR": protector_inf.get("PROPIEDAD"),
-            "MARCA  SDT": sdt.get("DESCRIPCION"),
-            "SERIAL  SDT": sdt.get("NO_SERIE"),
-            "NOM. CONT.  SDT": sdt.get("CONDICION"),
-            "KVA  SDT": sdt.get("KVA"),
-            "PULSOS  SDT": sdt.get("PULSOS"),
-            "PROPIEDAD  SDT": sdt.get("PROPIEDAD"),
-            "MARCA  SHIFT": shift.get("DESCRIPCION"),
-            "SERIAL  SHIFT": shift.get("NO_SERIE"),
-            "NOM. CONT.  SHIFT": shift.get("CONDICION"),
-            "KVA  SHIFT": shift.get("KVA"),
-            "PULSOS  SHIFT": shift.get("PULSOS"),
-            "PROPIEDAD  SHIFT": shift.get("PROPIEDAD"),
-            "MARCA VSD": vsd.get("DESCRIPCION"),
-            "SERIAL VSD": vsd.get("NO_SERIE"),
-            "NOM. CONT.  VSD": vsd.get("CONDICION"),
-            "KVA VSD": vsd.get("KVA"),
-            "PULSOS VSD": vsd.get("PULSOS"),
-            "PROPIEDAD VSD": vsd.get("PROPIEDAD"),
-            "MARCA SUT": sut.get("DESCRIPCION"),
-            "SERIAL SUT": sut.get("NO_SERIE"),
-            "NOM. CONT.  SUT": sut.get("CONDICION"),
-            "KVA SUT": sut.get("KVA"),
-            "PROPIEDAD SUT": sut.get("PROPIEDAD"),
-            "Modo de Falla General": st.get("GENERAL"),
-            "Modo de Falla Especifico": st.get("GENERAL_ESPECIFICO"),
-            "Componente en Falla": st.get("ESPECIFICO"),
-            "Sub-Componente en Falla": st.get("QAQC"),
-            "Mecanismo de Falla General ": st.get("GENERAL"),
-            "Mecanismo de Falla Específico": st.get("GENERAL_ESPECIFICO"),
-            "Causa de Falla General": st.get("RAZON_STOP"),
-            "Causa de Falla Especifica": st.get("RAZON_STOP"),
-            "Comentarios Pull - Tear Down": pu.get("RAZON_PULL"),
-            "Falla directa ": st.get("GENERAL"),
-            "Falla indirecta": st.get("GENERAL_ESPECIFICO"),
-            "Plan de accion de fallas directas ": st.get("QAQC"),
-            "PROPIEDAD_127": d2.get("PROPIEDAD"),
-            "CABLE RENTA": d2.get("CABLE_RENTA"),
-        }
-        row_data[pozo] = row
+        ws.cell(out_row, 82).value = _excel_safe_value(c_inf.get("LONGITUD")  or "")
+        ws.cell(out_row, 83).value = _excel_safe_value(c_med1.get("LONGITUD") or "")
+        ws.cell(out_row, 84).value = _excel_safe_value(c_sup.get("LONGITUD")  or "")
+        ws.cell(out_row, 85).value = _excel_safe_value(c_med2.get("LONGITUD") or "")
 
-    # Build workbook
-    for col_idx, h in headers.items():
-        ws.cell(3, col_idx).value = h
+    # ============================================================
+    # 17) ACCESORIOS Y PROTECTORES  -> cols 86..91
+    # ============================================================
+    base_set = set()
+    for r in ef_rows:
+        base_set.add((_normalize_pozo_key(r.get("POZO_ID")) or "",
+                      "" if r.get("NO_INSTALACION") is None else str(r.get("NO_INSTALACION"))))
+    for r in acc_rows:
+        base_set.add((_normalize_pozo_key(r.get("POZO_ID")) or "",
+                      "" if r.get("NO_INSTALACION") is None else str(r.get("NO_INSTALACION"))))
 
-    # Row 1 groups
-    _merge_title(ws, 1, 32, 37, "PROTECTOR/SELLO", "92D050")
-    _merge_title(ws, 1, 45, 69, "BOMBAS", "92D050")
-    _merge_title(ws, 1, 92, 114, "EQUIPO ELÉCTRICO DE SUPERFICIE", "92D050")
-    _merge_title(ws, 1, 115, 122, "ESTRUCTURA DE DATOS DE EVENTOS DE FALLA", "92D050")
+    ya_escrito = set()
+    for pozo, no_inst in base_set:
+        if not pozo or pozo not in dict_pozos or pozo in ya_escrito:
+            continue
+        ya_escrito.add(pozo)
+        out_row = dict_pozos[pozo] + (PEC_DATA_START - 1)
+        equipos = ef_by_pozo.get(pozo, [])
 
-    # Row 2 titles
-    tit_row2 = [
-        (23, 24, "SENSOR", "00B0F0"),
-        (25, 31, "MOTOR", "00B0F0"),
-        (32, 34, "INFERIOR", "00B0F0"),
-        (35, 37, "SUPERIOR", "00B0F0"),
-        (38, 40, "INTAKE / SEP.GAS", "00B0F0"),
-        (41, 44, "MANEJADOR DE GAS", "FFC000"),
-        (45, 49, "INFERIOR", "00B0F0"),
-        (50, 54, "INTERMEDIA", "00B0F0"),
-        (55, 59, "INTERMEDIA", "00B0F0"),
-        (60, 64, "INTERMEDIA", "00B0F0"),
-        (65, 69, "SUPERIOR", "00B0F0"),
-        (70, 73, "CONECTOR", "00B0F0"),
-        (74, 84, "CABLE", "00B0F0"),
-        (86, 88, "ACCESORIOS", "00B0F0"),
-        (89, 91, "PROTECTORES", "00B0F0"),
-        (92, 97, "TRAFO. REDUCTOR (SDT)", "92D050"),
-        (98, 103, "TRAFO. SHIFT", "00B0F0"),
-        (104, 109, "VARIADOR FRECUENCIA (VSD)", "92D050"),
-        (110, 114, "TRANSFORMADOR  SALIDA ELEVADOR (SUT)", "92D050"),
-        (115, 116, "MODO DE FALLA", "00B0F0"),
-        (117, 118, "COMPONENTE / ITEM EN FALLA", "00B0F0"),
-        (119, 120, "MECANISMO DE FALLA", "00B0F0"),
-        (121, 122, "CAUSA DE FALLA", "00B0F0"),
-    ]
-    for start, end, title, color in tit_row2:
-        _merge_title(ws, 2, start, end, title, color, "000000" if color == "FFC000" else "FFFFFF")
+        def _first_eq(pat):
+            for r in equipos:
+                if str(r.get("NO_INSTALACION") or "") != no_inst:
+                    continue
+                if _pec_equipo_contiene(r.get("EQUIPO"), pat):
+                    return r
+            return {}
 
-    # Row 3 headers (fixed by column position, not by visible name)
-    for i in range(1, 129):
-        ws.cell(3, i).value = headers[i]
+        mandrel    = _first_eq("MANDREL DOSIFICADOR")
+        manejador  = _first_eq("MANEJADOR DE SÓLIDOS") or _first_eq("MANEJADOR DE SOLIDOS")
 
-    pec_keys = [
-        'Pozo',
-        'ZONA',
-        'CAMPO',
-        'LOCACION',
-        'Arena',
-        'Inst. Total',
-        'Start Date',
-        'Stop Date',
-        'Pulling Date',
-        'Year Start',
-        'Year Stop',
-        'Year Pull',
-        'Downtime (Días)',
-        'Today',
-        'Run life',
-        'FAILURE Status',
-        'Tiempo en Pozo',
-        'ESP STATUS',
-        'CLIENTE ',
-        'CONTRATO',
-        'MODALIDAD CONTRACTUAL',
-        'Mfg.',
-        'Modelo Sensor',
-        'Serie Sensor',
-        'HP Motor',
-        'V Motor',
-        'A Motor',
-        'Tipo Motor',
-        'RPM Motor',
-        'Serie (diam) Motor',
-        'Serie Motor',
-        'Modelo PRT/SEL',
-        'Serie (diam) PRT/SEL',
-        'Serie PRT/SEL',
-        'Modelo PRT/SEL_2',
-        'Serie (diam) PRT/SEL_2',
-        'Serie PRT/SEL_2',
-        'Modelo ITK/SG',
-        'Serie (diam) ',
-        'Serie ITK/SG',
-        'Modelo GH',
-        'Serie (diam) GH',
-        'Serie GH',
-        '# Etapas GH',
-        'Modelo LP',
-        '# Etapas LP',
-        'Tipo LP',
-        'Serie (diam) _LP',
-        'Serie LP',
-        'Modelo MP',
-        '# Etapas MP',
-        'Serie (diam) _MP',
-        'Tipo MP',
-        'Serie MP',
-        'Modelo MP_2',
-        '# Etapas MP_2',
-        'Tipo MP_2',
-        'Serie (diam) _MP_2',
-        'Serie MP_2',
-        'Modelo MP_3',
-        '# Etapas MP_3',
-        'Tipo MP_3',
-        'Serie (diam) _MP_3',
-        'Serie MP_3',
-        'Modelo UP',
-        '# Etapas UP',
-        'Tipo UP',
-        'Serie (diam) _',
-        'Serie UP',
-        'Marca Conector',
-        'Upper Conector',
-        'Lower Conector',
-        'Mandreal',
-        'Serie 1 Cable',
-        'Serie 2 Cable',
-        'Serie 3 Cable',
-        'PROPIEDAD',
-        'Tipo 1 Cable',
-        'Tipo 2 Cable',
-        'Tipo 3 Cable',
-        'Tipo 4 Cable',
-        'Long 1 Cable (Pies)',
-        'Long 2 Cable (Pies)',
-        'Long 3 Cable (Pies)',
-        'Long 4 Cable (Pies)',
-        'MANDREL DOSIFICADOR DE QUIMICOS',
-        'MANEJADOR DE SOLIDOS',
-        'PROPIEDAD ACC',
-        'MARCA PTR',
-        'CANTIDAD PTR',
-        'PROPIEDAD PTR',
-        'MARCA  SDT',
-        'SERIAL  SDT',
-        'NOM. CONT.  SDT',
-        'KVA  SDT',
-        'PULSOS  SDT',
-        'PROPIEDAD  SDT',
-        'MARCA  SHIFT',
-        'SERIAL  SHIFT',
-        'NOM. CONT.  SHIFT',
-        'KVA  SHIFT',
-        'PULSOS  SHIFT',
-        'PROPIEDAD  SHIFT',
-        'MARCA VSD',
-        'SERIAL VSD',
-        'NOM. CONT.  VSD',
-        'KVA VSD',
-        'PULSOS VSD',
-        'PROPIEDAD VSD',
-        'MARCA SUT',
-        'SERIAL SUT',
-        'NOM. CONT.  SUT',
-        'KVA SUT',
-        'PROPIEDAD SUT',
-        'Modo de Falla General',
-        'Modo de Falla Especifico',
-        'Componente en Falla',
-        'Sub-Componente en Falla',
-        'Mecanismo de Falla General ',
-        'Mecanismo de Falla Específico',
-        'Causa de Falla General',
-        'Causa de Falla Especifica',
-        'Comentarios Pull - Tear Down',
-        'Falla directa ',
-        'Falla indirecta',
-        'Plan de accion de fallas directas ',
-        'PROPIEDAD_127',
-        'CABLE RENTA'
-    ]
+        propiedad_acc = " ".join([
+            str(mandrel.get("PROPIEDAD")   or "").strip(),
+            str(manejador.get("PROPIEDAD") or "").strip(),
+        ]).strip()
 
-    # Data rows: the output is written strictly by column position.
-    # The source keys are only an internal lookup layer; repeated visible labels
-    # in the PEC header never affect the final layout.
-    def _build_pec_values(pozo: str) -> list:
-        row = row_data.get(pozo, {})
-        values = [None] * 129  # index 0 unused, columns 1..128
-        values[1] = pozo
-        for col_idx, key in enumerate(pec_keys[1:], start=2):
-            values[col_idx] = row.get(key)
-        return values
+        ws.cell(out_row, 86).value = _excel_safe_value(mandrel.get("DESCRIPCION")   or "")
+        ws.cell(out_row, 87).value = _excel_safe_value(manejador.get("DESCRIPCION") or "")
+        ws.cell(out_row, 88).value = _excel_safe_value(propiedad_acc)
+        ws.cell(out_row, 89).value = _excel_safe_value(
+            _pec_concat_accesorios_inst(acc_rows, pozo, no_inst, "DESCRIPCION"))
+        ws.cell(out_row, 90).value = _excel_safe_value(
+            _pec_concat_accesorios_inst(acc_rows, pozo, no_inst, "CANTIDAD"))
+        ws.cell(out_row, 91).value = _excel_safe_value(
+            _pec_concat_accesorios_inst(acc_rows, pozo, no_inst, "PROPIEDAD"))
 
-    for row_idx, pozo in enumerate(pozo_order, start=4):
-        values = _build_pec_values(pozo)
-        for col_idx in range(1, 129):
-            ws.cell(row_idx, col_idx).value = _excel_safe_value(values[col_idx])
+    # ============================================================
+    # 18) SDT - TRANSFORMADOR REDUCTOR  -> cols 93, 95, 97
+    # ============================================================
+    for pozo in pozo_order:
+        out_row = dict_pozos[pozo] + (PEC_DATA_START - 1)
+        es = es_by_pozo.get(pozo, [])
+        sdt_list = sorted(
+            [r for r in es if _pec_equipo_contiene(r.get("EQUIPO"), "TRANSFORMADOR REDUCTOR")],
+            key=lambda r: ("" if r.get("NO_SERIE") is None else str(r.get("NO_SERIE")))
+        )
+        if not sdt_list: continue
+        first = sdt_list[0]
+        ws.cell(out_row, 93).value = _excel_safe_value(first.get("NO_SERIE")  or "")
+        ws.cell(out_row, 95).value = _excel_safe_value(_pec_extraer_kva(first.get("DESCRIPCION")))
+        ws.cell(out_row, 97).value = _excel_safe_value(first.get("PROPIEDAD") or "")
 
-    last_row = max(3, 3 + len(pozo_order))
-    ws.freeze_panes = "A4"
-    ws.auto_filter.ref = f"A3:{get_column_letter(128)}{last_row}"
+    # cols 98..103 (SHIFT) -> vacías
 
-    # Apply styles
-    thin = Side(style="thin", color="000000")
+    # ============================================================
+    # 19) VSD - VARIADOR DE FRECUENCIA  -> cols 105, 107, 108, 109
+    # ============================================================
+    for pozo in pozo_order:
+        out_row = dict_pozos[pozo] + (PEC_DATA_START - 1)
+        es = es_by_pozo.get(pozo, [])
+        vsd_list = sorted(
+            [r for r in es if _pec_equipo_contiene(r.get("EQUIPO"), "VARIADOR DE FRECUENCIA")],
+            key=lambda r: ("" if r.get("NO_SERIE") is None else str(r.get("NO_SERIE")))
+        )
+        if not vsd_list: continue
+        first = vsd_list[0]
+        desc = first.get("DESCRIPCION") or ""
+        ws.cell(out_row, 105).value = _excel_safe_value(first.get("NO_SERIE")  or "")
+        ws.cell(out_row, 107).value = _excel_safe_value(_pec_extraer_kva(desc))
+        ws.cell(out_row, 108).value = _excel_safe_value(_pec_extraer_pulsos(desc))
+        ws.cell(out_row, 109).value = _excel_safe_value(first.get("PROPIEDAD") or "")
+
+    # ============================================================
+    # 20) SUT - TRANSFORMADOR ELEVADOR  -> cols 111, 113, 114
+    # ============================================================
+    for pozo in pozo_order:
+        out_row = dict_pozos[pozo] + (PEC_DATA_START - 1)
+        es = es_by_pozo.get(pozo, [])
+        sut_list = sorted(
+            [r for r in es if _pec_equipo_contiene(r.get("EQUIPO"), "TRANSFORMADOR ELEVADOR")],
+            key=lambda r: ("" if r.get("NO_SERIE") is None else str(r.get("NO_SERIE")))
+        )
+        if not sut_list: continue
+        first = sut_list[0]
+        ws.cell(out_row, 111).value = _excel_safe_value(first.get("NO_SERIE")  or "")
+        ws.cell(out_row, 113).value = _excel_safe_value(_pec_extraer_kva(first.get("DESCRIPCION")))
+        ws.cell(out_row, 114).value = _excel_safe_value(first.get("PROPIEDAD") or "")
+
+    # ============================================================
+    # 21) STATUS  -> cols 115, 116
+    # ============================================================
+    for pozo in pozo_order:
+        out_row = dict_pozos[pozo] + (PEC_DATA_START - 1)
+        st = st_by_pozo.get(pozo, {})
+        ws.cell(out_row, 115).value = _excel_safe_value(st.get("GENERAL")            or "")
+        ws.cell(out_row, 116).value = _excel_safe_value(st.get("GENERAL_ESPECIFICO") or "")
+
+    # cols 117..128 quedan vacías (el VBA tampoco las setea)
+
+    # ============================================================
+    # FORMATO FINAL
+    #   - Filas 1, 2 y 3 (encabezados): fondo #000080, letra blanca, negrita.
+    #   - Todas las celdas: fuente Univers 47 CondensedLight.
+    # ============================================================
+    last_row = max(PEC_HEADER_ROW, PEC_HEADER_ROW + len(pozo_order))
+    ws.freeze_panes = "B4"
+    ws.auto_filter.ref = f"A{PEC_HEADER_ROW}:{get_column_letter(PEC_TOTAL_COLS)}{last_row}"
+
+    thin   = Side(style="thin", color="000000")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    header_fill = PatternFill("solid", fgColor=PEC_HEADER_FILL)
+
     for r in range(1, last_row + 1):
-        for c in range(1, 129):
+        for c in range(1, PEC_TOTAL_COLS + 1):
             cell = ws.cell(r, c)
             cell.border = border
-            if r <= 2:
-                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-                cell.font = Font(bold=True, color="FFFFFF")
-                if r == 1:
-                    cell.fill = PatternFill("solid", fgColor="92D050")
-                else:
-                    cell.fill = PatternFill("solid", fgColor="00B0F0")
-            elif r == 3:
-                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-                cell.font = Font(bold=True, color="000000")
-                cell.fill = PatternFill("solid", fgColor="DDEBF7")
-            else:
-                cell.alignment = Alignment(vertical="center", wrap_text=True)
-                if r % 2 == 0:
-                    cell.fill = PatternFill("solid", fgColor="DDEBF7")
 
-    _autosize_columns(ws, 128)
+            if r <= PEC_HEADER_ROW:
+                # Filas 1, 2 y 3 (encabezados)
+                cell.alignment = Alignment(horizontal="center",
+                                           vertical="center",
+                                           wrap_text=True)
+                cell.fill = header_fill
+                cell.font = Font(name=PEC_FONT_NAME,
+                                 bold=True,
+                                 color=PEC_HEADER_FONT)
+            else:
+                # Filas de datos
+                cell.alignment = Alignment(vertical="center", wrap_text=True)
+                cell.font = Font(name=PEC_FONT_NAME, bold=False)
+                if r % 2 == 0:
+                    cell.fill = PatternFill("solid", fgColor="F2F2F2")
+
+    _autosize_columns(ws, PEC_TOTAL_COLS)
     return wb
+
+
+
 
 
 def _build_reporte_general_workbook(sb):
@@ -4067,7 +4367,8 @@ def descargar_reporte_pec():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
 
 
 
