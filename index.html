@@ -1222,7 +1222,7 @@
 
       <h2 style="color:#fff; margin-bottom:20px;">¡Bienvenido!</h2>
 
-      <input id="loginUser" type="text" placeholder="Usuario"
+      <input id="loginUser" type="email" placeholder="Usuario"
         style="width:100%; padding:10px; margin-bottom:10px; border-radius:8px; border:none;" />
 
       <input id="loginPass" type="password" placeholder="Contraseña"
@@ -1232,23 +1232,79 @@
         style="width:100%; padding:10px; background:#00c2ff; border:none; border-radius:8px; cursor:pointer;">
         Ingresar
       </button>
+      
 
       <p id="loginError" style="color:red; margin-top:10px; display:none;">Credenciales incorrectas</p>
     </div>
   </div>
+</div>
+</div>
+
+<!-- Ventana Crear Usuario -->
+<div id="modalCrearUsuario" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); justify-content:center; align-items:center; z-index:10000;">
+  <div style="background:white; padding:25px; border-radius:14px; width:320px; box-shadow:0 10px 25px rgba(0,0,0,0.25);">
+    
+    <h2 style="margin-top:0; text-align:center; color:#111;">Crear usuario</h2>
+
+
+    <input id="nombre" type="text" placeholder="Nombre"
+      style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:8px;">
+
+    <input id="apellido" type="text" placeholder="Apellido"
+      style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:8px;">
+
+    <input id="correoNuevo" type="email" placeholder="Correo"
+      style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:8px;">
+
+    <input id="contrasenaNueva" type="password" placeholder="Contraseña"
+      style="width:100%; padding:10px; margin-bottom:15px; border:1px solid #ccc; border-radius:8px;">
+    <label style="display:block; color:#111; margin-bottom:8px;">
+      <input id="permisoCarga" type="checkbox">
+      Acceso a Carga
+    </label>
+
+    <label style="display:block; color:#111; margin-bottom:15px;">
+      <input id="permisoStop" type="checkbox">
+      Acceso a Stop
+    </label>
+    <p style="color:#555; font-size:12px;">
+      Si no seleccionas ninguno, el usuario tendrá solo Acceso a: Inicio y Pozos.
+    </p>
+    <button onclick="crearUsuario()"
+      style="width:100%; padding:10px; background:#00c2ff; border:none; border-radius:8px; cursor:pointer;">
+      Guardar usuario
+    </button>
+
+    <button onclick="cerrarCrearUsuario()"
+      style="width:100%; padding:10px; margin-top:10px; background:#ddd; border:none; border-radius:8px; cursor:pointer;">
+      Cancelar
+    </button>
+
+  </div>
+</div>
+
+
+  
   <div class="layout">
     <aside class="sidebar">
       <div class="brand">Well Controller</div>
       
 
       <div class="menu">
+
+        <button id="btnCrearUsuario"
+          onclick="abrirCrearUsuario()"
+          style="display:none;">
+          Crear Usuario
+        </button>
         <button class="tab-btn active" data-tab="dashboard">Inicio</button>
         <button class="tab-btn" data-tab="pozos">Pozos</button>
         <button class="tab-btn" data-tab="carga">Carga</button>
         <button class="tab-btn" data-tab="stop">Stop</button>
-        <button class="tab-btn" data-tab="edicion">Edición</button>
         <button id="btnLogout" class="logout-btn">Cerrar sesión</button>
       </div>
+
+
     </aside>
 
     <main class="content">
@@ -1368,12 +1424,7 @@
                     </select>
                   </div>
 
-                  <div class="industrial-field">
-                    <label for="cmbPozoFWeb">Pozo (F)</label>
-                    <select id="cmbPozoFWeb">
-                      <option value="">Seleccionar</option>
-                    </select>
-                  </div>
+               
                 </div>
 
                 <div class="industrial-field">
@@ -1603,9 +1654,8 @@
             <div class="subidas-header">
               <h3>Historial de subidas</h3>
               <div class="actions">
-                <button class="btn btn-secondary" type="button">WELL STATUS</button>
                 <button class="btn btn-secondary" type="button">DATA QPM</button>
-                <button class="btn btn-secondary" type="button">Data Operaciones</button>
+                
               </div>
             </div>
 
@@ -1760,9 +1810,7 @@
 
   <script>
     function getApiBase() {
-  // El frontend debe apuntar siempre al backend Flask.
-  // Si abres el archivo desde Live Server (5500) o como archivo local (origin null),
-  // este valor evita que los fetch se vayan al puerto equivocado.
+
   return "https://basededatos-8wn7.onrender.com";
 }
 
@@ -1798,15 +1846,59 @@ const labels = {
         if (subtitle) subtitle.textContent = labels[tab]?.[1] || '';
       });
     });
-    function login() {
-      const user = document.getElementById("loginUser").value;
-      const pass = document.getElementById("loginPass").value;
+    async function login() {
+      const nombre = document.getElementById("loginUser").value.trim();
+      const contrasena = document.getElementById("loginPass").value.trim();
+      const loginError = document.getElementById("loginError");
 
-      if (user === "Mario" && pass === "123456") {
+      loginError.style.display = "none";
+
+      // Validación básica
+      if (!nombre || !contrasena) {
+        loginError.innerText = "Ingrese usuario y contraseña";
+        loginError.style.display = "block";
+        return;
+      }
+
+      try {
+        const response = await fetch("https://basededatos-8wn7.onrender.com/api/login", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            nombre: nombre,
+            contrasena: contrasena
+          })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          loginError.innerText = result.error || "Credenciales incorrectas";
+          loginError.style.display = "block";
+          return;
+        }
+
+        if (result.usuario.nombre === "Mario") {
+          document.getElementById("btnCrearUsuario").style.display = "block";
+        } else {
+          document.getElementById("btnCrearUsuario").style.display = "none";
+        }
+
+        // 👇 Ocultar pantalla de login
         document.getElementById("loginScreen").style.display = "none";
+
+        // 👇 Mostrar sistema
+        document.querySelector(".layout").style.display = "grid";
+        aplicarPermisos(result.usuario);
         inicializarDatos();
-      } else {
-        document.getElementById("loginError").style.display = "block";
+
+
+      } catch (error) {
+        console.error(error);
+        loginError.innerText = "Error de conexión con el servidor";
+        loginError.style.display = "block";
       }
     }
 
@@ -1829,7 +1921,79 @@ const labels = {
       const el = document.getElementById(id);
       if (el) el.value = value ?? "";
     }
+    function aplicarPermisos(usuario) {
+      const esAdmin = usuario.nombre === "Mario";
 
+      const permisos = {
+        dashboard: true, // Inicio siempre
+        pozos: true,     // Pozos siempre
+        carga: esAdmin || usuario.permiso_carga === true,
+        stop: esAdmin || usuario.permiso_stop === true,
+        edicion: esAdmin
+      };
+
+      document.querySelectorAll(".tab-btn").forEach(btn => {
+        const tab = btn.dataset.tab;
+        btn.style.display = permisos[tab] ? "block" : "none";
+
+        btn.onclick = null;
+        btn.addEventListener("click", () => {
+          if (!permisos[tab]) {
+            alert("No tienes permiso para acceder a este módulo.");
+            return;
+          }
+
+          document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+          btn.classList.add("active");
+
+          document.querySelectorAll(".module-section").forEach(section => {
+            section.classList.remove("active");
+          });
+
+          document.getElementById(tab).classList.add("active");
+        });
+      });
+
+      const btnCrearUsuario = document.getElementById("btnCrearUsuario");
+      if (btnCrearUsuario) {
+        btnCrearUsuario.style.display = esAdmin ? "block" : "none";
+      }
+    }
+    
+    async function cargarHistorialSubidas() {
+      const tbody = document.getElementById("historialBody");
+      if (!tbody) return;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/historial-subidas`);
+        const json = await res.json();
+
+        if (!res.ok || !json.ok) {
+          throw new Error(json.error || "No se pudo cargar historial.");
+        }
+
+        tbody.innerHTML = "";
+
+        if (!json.data || json.data.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="4">No hay cargas registradas</td></tr>`;
+          return;
+        }
+
+        json.data.forEach(row => {
+          tbody.innerHTML += `
+            <tr>
+              <td>${row.fecha ?? ""}</td>
+              <td>${row.pozo ?? ""}</td>
+              <td>${row.tipo ?? ""}</td>
+              <td>${row.usuario ?? ""}</td>
+            </tr>
+          `;
+        });
+
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="4">Error: ${err.message}</td></tr>`;
+      }
+    }
     function createEmptyRows(tbodyId, cols = 5, rows = 5) {
       const tbody = document.getElementById(tbodyId);
       if (!tbody) return;
@@ -2070,12 +2234,24 @@ const labels = {
 
     function formatDateForInput(valor) {
       if (!valor) return "";
-      return String(valor).split(" ")[0];
+
+      const texto = String(valor).trim();
+      const match = texto.match(/\d{4}-\d{2}-\d{2}/);
+
+      return match ? match[0] : "";
     }
 
-    function extraerFechaSolo(valor) {
-      if (!valor) return null;
-      return valor;
+    function formatDateForInput(valor) {
+      if (!valor) return "";
+
+      const texto = String(valor).trim();
+
+      // Acepta: 2026-05-02
+      // Acepta: 2026-05-02 00:00:00
+      // Acepta: 2026-05-02T00:00:00
+      const match = texto.match(/\d{4}-\d{2}-\d{2}/);
+
+      return match ? match[0] : "";
     }
 
     async function checkHealth() {
@@ -2113,10 +2289,7 @@ const labels = {
         if (combo2) combo2.innerHTML = `<option value="">Seleccionar</option>`;
 
         json.data.forEach(item => {
-          const valor = JSON.stringify({
-            pozo_id: item.pozo_id,
-            no_instalacion: item.no_instalacion
-          });
+        const valor = item.id;
 
           if (combo1) {
             const opt1 = document.createElement("option");
@@ -2152,11 +2325,9 @@ const labels = {
       }
 
       try {
-        const parsed = JSON.parse(valorCombo);
-        const pozo_id = parsed.pozo_id;
-        const no_instalacion = parsed.no_instalacion;
+        const id = valorCombo;
 
-        const url = `${API_BASE}/api/pozos/detalle?pozo_id=${encodeURIComponent(pozo_id)}&no_instalacion=${encodeURIComponent(no_instalacion)}`;
+        const url = `${API_BASE}/api/pozos/detalle?id=${encodeURIComponent(id)}`;
         const res = await fetch(url);
         const json = await res.json();
 
@@ -2175,7 +2346,7 @@ const labels = {
         fillValue("pozoStop", d.pozo?.stop);
         fillValue("pozoContrato", d.pozo?.contrato);
         fillValue("pozoRunLife", d.pozo?.run_life);
-        fillValue("pozoArranque", d.pozo?.arranque);
+        fillValue("pozoArranque", d.fecha_arranque);
 
         fillValue("fechaStop", d.stop?.fecha_stop);
         fillValue("stopGeneral", d.stop?.general);
@@ -2201,7 +2372,7 @@ const labels = {
           if (cmbPozoWeb) cmbPozoWeb.value = valorCombo;
         }
 
-        setEstado(`Pozo cargado: ${pozo_id} - ${no_instalacion}`);
+        setEstado(`Pozo cargado: ${id}`);
       } catch (err) {
         setEstado(`Error cargando detalle: ${err.message}`);
       }
@@ -2251,43 +2422,52 @@ const labels = {
       }
     }
 
-    async function cargarDetalleStop(pozo_id, no_instalacion) {
+    async function cargarDetalleStop(id) {
       try {
+        console.log("Buscando stop con ID:", id);
+
         const res = await fetch(
-          `${API_BASE}/api/stop/detalle?pozo_id=${encodeURIComponent(pozo_id)}&no_instalacion=${encodeURIComponent(no_instalacion)}`
+          `${API_BASE}/api/stop/detalle?id=${encodeURIComponent(id)}`
         );
 
         const json = await res.json();
+        console.log("DETALLE STOP:", json);
 
         if (!res.ok || !json.ok) {
           throw new Error(json.error || "No se pudo cargar detalle stop.");
         }
 
         const d = json.data || {};
+        if (!d.stop_date) {
+          document.getElementById("stopFechaStopInput").value = "";
+          document.getElementById("stopFechaStartInput").value = "";
+          document.getElementById("stopRazonStopInput").value = "";
+          document.getElementById("stopRazonPullInput").value = "";
+          document.getElementById("QAQCRazonQAQCInput").value = "";
+          document.getElementById("stopGeneralInput").value = "";
 
-        fillValue("stopFechaStopInput", formatDateForInput(d.stop_date));
-        fillValue("stopFechaStartInput", formatDateForInput(d.start_date));
-        fillValue("stopRazonStopInput", d.razon_stop || "");
-        fillValue("stopRazonPullInput", d.pull_coment || "");
-        fillValue("QAQCRazonQAQCInput", d.qaqc || "");
+          await cargarGeneralEspecifico("", "");
+          await cargarEspecifico("", "", "");
 
-        fillValue("stopGeneralInput", d.general || "");
+          return;
+        }
+        console.log("DETALLE STOP RECIBIDO:", d);
+
+        document.getElementById("stopFechaStopInput").value = formatDateForInput(d.stop_date);
+        document.getElementById("stopFechaStartInput").value = formatDateForInput(d.start_date);
+        document.getElementById("stopRazonStopInput").value = d.razon_stop || "";
+        document.getElementById("stopRazonPullInput").value = d.pull_coment || "";
+        document.getElementById("QAQCRazonQAQCInput").value = d.qaqc || "";
+        document.getElementById("stopGeneralInput").value = d.general || "";
 
         await cargarGeneralEspecifico(d.general || "", d.general_especifico || "");
         await cargarEspecifico(d.general || "", d.general_especifico || "", d.especifico || "");
 
-        const stopEstadoChip = document.getElementById("stopEstadoChip");
-        if (stopEstadoChip) {
-          stopEstadoChip.textContent = d.estado || "STOP";
-        }
-
-        actualizarVistaStop();
       } catch (err) {
-        console.error(err);
+        console.error("Error cargando detalle stop:", err);
         alert("Error cargando detalle stop: " + err.message);
       }
     }
-
     async function cargarPozosStop(buscar = "") {
       const cmbStopPozo = document.getElementById("cmbStopPozo");
       if (!cmbStopPozo) return;
@@ -2310,10 +2490,7 @@ const labels = {
         cmbStopPozo.innerHTML = `<option value="">Seleccionar</option>`;
 
         json.data.forEach(item => {
-          const valor = JSON.stringify({
-            pozo_id: item.pozo_id,
-            no_instalacion: item.no_instalacion
-          });
+        const valor = item.id;
 
           const opt = document.createElement("option");
           opt.value = valor;
@@ -2368,19 +2545,18 @@ const labels = {
         return;
       }
 
-      const seleccionado = JSON.parse(combo.value);
+      const id = combo.value;
 
       const payload = {
-        pozo_id: seleccionado.pozo_id,
-        no_instalacion: seleccionado.no_instalacion,
-        stop_date: extraerFechaSolo(document.getElementById("stopFechaStopInput")?.value),
-        razon_stop: document.getElementById("stopRazonStopInput")?.value?.trim() || null,
-        start_date: extraerFechaSolo(document.getElementById("stopFechaStartInput")?.value),
-        pull_coment: document.getElementById("stopRazonPullInput")?.value?.trim() || null,
-        general: document.getElementById("stopGeneralInput")?.value || null,
-        general_especifico: document.getElementById("stopGeneralEspecificoInput")?.value || null,
-        especifico: document.getElementById("stopEspecificoInput")?.value || null,
-        qaqc: document.getElementById("QAQCRazonQAQCInput")?.value?.trim() || null
+        id: id,
+        stop_date: extraerFechaSolo(document.getElementById("stopFechaStopInput").value),
+        start_date: extraerFechaSolo(document.getElementById("stopFechaStartInput").value),
+        razon_stop: document.getElementById("stopRazonStopInput").value.trim() || null,
+        pull_coment: document.getElementById("stopRazonPullInput").value.trim() || null,
+        general: document.getElementById("stopGeneralInput").value || null,
+        general_especifico: document.getElementById("stopGeneralEspecificoInput").value || null,
+        especifico: document.getElementById("stopEspecificoInput").value || null,
+        qaqc: document.getElementById("QAQCRazonQAQCInput").value.trim() || null
       };
 
       try {
@@ -2399,8 +2575,11 @@ const labels = {
         }
 
         alert(json.message || "Guardado correctamente.");
-        await cargarDetalleStop(seleccionado.pozo_id, seleccionado.no_instalacion);
+        await cargarDetalleStop(id);
+        await cargarResumenDashboard();
+
       } catch (err) {
+        console.error("Error guardando stop:", err);
         alert("Error guardando stop: " + err.message);
       }
     }
@@ -2412,6 +2591,16 @@ const labels = {
       estadoImportacion.className = 'estado-importacion ' + tipo;
       estadoImportacion.textContent = mensaje;
     }
+    function limpiarFormularioStop() {
+      document.getElementById("stopFechaStopInput").value = "";
+      document.getElementById("stopFechaStartInput").value = "";
+      document.getElementById("stopRazonStopInput").value = "";
+      document.getElementById("stopRazonPullInput").value = "";
+      document.getElementById("QAQCRazonQAQCInput").value = "";
+      document.getElementById("stopGeneralInput").value = "";
+      document.getElementById("stopGeneralEspecificoInput").innerHTML = '<option value="">Seleccione...</option>';
+      document.getElementById("stopEspecificoInput").innerHTML = '<option value="">Seleccione...</option>';
+    }
 
     const cmbPozoWeb = document.getElementById("cmbPozoWeb");
     const cmbPozoFWeb = document.getElementById("cmbPozoFWeb");
@@ -2421,6 +2610,17 @@ const labels = {
     const txtBuscarStopPozo = document.getElementById("txtBuscarStopPozo");
     const cmbStopPozo = document.getElementById("cmbStopPozo");
     const btnGuardarStop = document.getElementById("btnGuardarStop");
+
+    function extraerFechaSolo(valor) {
+      if (!valor) return null;
+      const texto = String(valor).trim();
+      const match = texto.match(/\d{4}-\d{2}-\d{2}/);
+      return match ? match[0] : null;
+    }
+
+    if (btnGuardarStop) {
+      btnGuardarStop.addEventListener("click", guardarStop);
+    }
 
     const stopGeneralInput = document.getElementById("stopGeneralInput");
     const stopGeneralEspecificoInput = document.getElementById("stopGeneralEspecificoInput");
@@ -2490,11 +2690,14 @@ const labels = {
 
     if (cmbStopPozo) {
       cmbStopPozo.addEventListener("change", async (e) => {
-        const valor = e.target.value;
-        if (!valor) return;
+        const id = e.target.value;
 
-        const parsed = JSON.parse(valor);
-        await cargarDetalleStop(parsed.pozo_id, parsed.no_instalacion);
+        if (!id) {
+          limpiarFormularioStop();
+          return;
+        }
+
+        await cargarDetalleStop(id);
       });
     }
 
@@ -2923,379 +3126,101 @@ if (btnReportePEC) {
 
     inicializarDatos();
   </script>
-
-  <!-- SCRIPT PARA EDICIÓN DE TABLAS -->
   <script>
-    let tablaActual = null;
-    let paginaActual = 1;
-    let porPagina = 50;
-    let datosTablaActual = [];
-    let columnasTablaActual = [];
-    let registrosModificados = new Map(); // Rastrear cambios
-
-    async function cargarListaTablas() {
-      try {
-        const res = await fetch(`${API_BASE}/api/tablas`);
-        const json = await res.json();
-
-        if (!res.ok || !json.ok) {
-          throw new Error(json.error || "Error al cargar tablas");
-        }
-
-        const tablasList = document.getElementById('tablasList');
-        tablasList.innerHTML = '';
-
-        json.tablas.forEach(tabla => {
-          const btn = document.createElement('button');
-          btn.className = 'btn btn-secondary';
-          btn.textContent = tabla;
-          btn.style.padding = '10px 12px';
-          btn.style.textAlign = 'left';
-          btn.style.borderRadius = '8px';
-          btn.style.border = '1px solid var(--border)';
-          btn.style.color = 'var(--text)';
-          btn.style.cursor = 'pointer';
-          btn.style.transition = 'all 0.3s ease';
-          
-          btn.addEventListener('mouseover', () => {
-            btn.style.backgroundColor = 'var(--border)';
-            btn.style.borderColor = 'var(--primary)';
-          });
-          
-          btn.addEventListener('mouseout', () => {
-            btn.style.backgroundColor = 'transparent';
-            btn.style.borderColor = 'var(--border)';
-          });
-          
-          btn.addEventListener('click', () => {
-            tablaActual = tabla;
-            paginaActual = 1;
-            registrosModificados.clear();
-            cargarDatosTabla(tabla, 1);
-          });
-
-          tablasList.appendChild(btn);
-        });
-      } catch (err) {
-        const tablasList = document.getElementById('tablasList');
-        tablasList.innerHTML = `<p style="color: var(--danger);">Error: ${err.message}</p>`;
-      }
+    function abrirCrearUsuario() {
+      document.getElementById("modalCrearUsuario").style.display = "flex";
     }
 
-    async function cargarDatosTabla(nombreTabla, pagina = 1) {
-      try {
-        const busqueda = document.getElementById('edicionBusqueda')?.value || '';
-        const url = `${API_BASE}/api/tabla/datos/${encodeURIComponent(nombreTabla)}?pagina=${pagina}&por_pagina=${porPagina}`;
-        
-        const res = await fetch(url);
-        const json = await res.json();
-
-        if (!res.ok || !json.ok) {
-          throw new Error(json.error || "Error al cargar datos");
-        }
-
-        tablaActual = nombreTabla;
-        paginaActual = pagina;
-        datosTablaActual = json.datos;
-        columnasTablaActual = json.columnas;
-
-        const edicionContent = document.getElementById('edicionContent');
-        
-        // Información de la tabla
-        let html = `
-          <div style="margin-bottom: 20px;">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-              <div>
-                <h3 style="color: var(--primary); margin-bottom: 10px;">${nombreTabla}</h3>
-                <p style="color: var(--muted); font-size: 12px;">
-                  Registros: <strong>${json.total_registros}</strong> | 
-                  Página: <strong>${pagina}/${json.total_paginas}</strong> | 
-                  Columnas: <strong>${json.columnas.length}</strong>
-                </p>
-              </div>
-              <div style="display: flex; gap: 10px;">
-                <input 
-                  type="text" 
-                  id="edicionBusqueda" 
-                  placeholder="Buscar..."
-                  style="
-                    padding: 8px 12px;
-                    background: var(--card);
-                    border: 1px solid var(--border);
-                    border-radius: 6px;
-                    color: var(--text);
-                    width: 200px;
-                  "
-                />
-                <button 
-                  onclick="exportarTabla('${nombreTabla}')"
-                  class="btn btn-secondary"
-                  style="padding: 8px 16px; font-size: 12px;"
-                >
-                
-                </button>
-              </div>
-            </div>
-          </div>
-        `;
-
-        // Tabla editable
-        html += `
-          <div style="overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 20px;">
-            <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
-              <thead style="background-color: var(--border); position: sticky; top: 0;">
-                <tr>
-                  <th style="padding: 10px; text-align: center; border-right: 1px solid var(--border-soft); width: 40px;">
-                    <input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)" style="cursor: pointer;">
-                  </th>
-        `;
-
-        // Headers
-        json.columnas.forEach(col => {
-          html += `<th style="padding: 10px; text-align: left; border-right: 1px solid var(--border-soft); color: var(--primary); font-weight: 600; white-space: nowrap;">${col.name}</th>`;
-        });
-
-        html += `
-                  <th style="padding: 10px; text-align: center; border-right: 1px solid var(--border-soft); width: 100px;">Acciones</th>
-                </tr>
-              </thead>
-              <tbody id="tablaBody">
-        `;
-
-        // Filas de datos
-        json.datos.forEach((row, rowIdx) => {
-          const rowKey = `row_${rowIdx}`;
-          html += `<tr id="${rowKey}" style="border-bottom: 1px solid var(--border-soft);">`;
-          
-          // Checkbox
-          html += `<td style="padding: 8px; text-align: center; border-right: 1px solid var(--border-soft);">
-            <input type="checkbox" class="row-select" data-row-key="${rowKey}" style="cursor: pointer;">
-          </td>`;
-          
-          // Celdas
-          json.columnas.forEach(col => {
-            const value = row[col.name] ?? '';
-            const displayValue = value === null || value === undefined ? '—' : value;
-            const inputId = `${rowKey}_${col.name}`;
-            
-            html += `
-              <td style="padding: 0; border-right: 1px solid var(--border-soft);">
-                <input 
-                  type="text" 
-                  id="${inputId}"
-                  value="${String(displayValue).replace(/"/g, '&quot;')}"
-                  data-original="${String(displayValue).replace(/"/g, '&quot;')}"
-                  style="
-                    width: 100%;
-                    background: transparent;
-                    border: none;
-                    color: var(--text);
-                    padding: 8px;
-                    font-size: 12px;
-                    transition: all 0.2s;
-                  "
-                  onchange="marcarModificado('${rowKey}')"
-                  onmouseover="this.style.backgroundColor = 'var(--card-soft)'; this.style.borderBottom = '1px solid var(--primary)';"
-                  onmouseout="this.style.backgroundColor = 'transparent'; this.style.borderBottom = 'none';"
-                />
-              </td>
-            `;
-          });
-
-          // Acciones
-          html += `
-            <td style="padding: 8px; border-right: 1px solid var(--border-soft); text-align: center;">
-              <button 
-                onclick="guardarRegistro('${rowKey}', '${nombreTabla}')"
-                class="btn btn-secondary" 
-                style="padding: 4px 8px; font-size: 11px; margin-bottom: 4px; width: 100%;"
-              >
-                💾 Guardar
-              </button>
-              <button 
-                onclick="eliminarRegistro('${rowKey}', '${nombreTabla}')"
-                class="btn btn-secondary" 
-                style="padding: 4px 8px; font-size: 11px; width: 100%; background-color: var(--danger);"
-              >
-                🗑️ Eliminar
-              </button>
-            </td>
-          </tr>`;
-        });
-
-        html += `
-              </tbody>
-            </table>
-          </div>
-        `;
-
-        // Controles de paginación
-        if (json.total_paginas > 1) {
-          html += `
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
-              <button 
-                onclick="cargarDatosTabla('${nombreTabla}', ${Math.max(1, pagina - 1)})"
-                ${pagina === 1 ? 'disabled' : ''}
-                class="btn btn-secondary"
-                style="padding: 8px 16px;"
-              >
-                ← Anterior
-              </button>
-              
-              <div style="color: var(--muted);">
-                Página <strong>${pagina}</strong> de <strong>${json.total_paginas}</strong>
-              </div>
-              
-              <button 
-                onclick="cargarDatosTabla('${nombreTabla}', ${Math.min(json.total_paginas, pagina + 1)})"
-                ${pagina === json.total_paginas ? 'disabled' : ''}
-                class="btn btn-secondary"
-                style="padding: 8px 16px;"
-              >
-                Siguiente →
-              </button>
-            </div>
-          `;
-        }
-
-        edicionContent.innerHTML = html;
-      } catch (err) {
-        const edicionContent = document.getElementById('edicionContent');
-        edicionContent.innerHTML = `<p style="color: var(--danger); padding: 20px;">Error: ${err.message}</p>`;
-      }
+    function cerrarCrearUsuario() {
+      document.getElementById("modalCrearUsuario").style.display = "none";
     }
 
-    function marcarModificado(rowKey) {
-      const row = document.getElementById(rowKey);
-      if (!row) return;
-
-      const cambios = {};
-      let hayCambios = false;
-
-      columnasTablaActual.forEach(col => {
-        const input = document.getElementById(`${rowKey}_${col.name}`);
-        if (input) {
-          const original = input.dataset.original;
-          const actual = input.value;
-
-          if (original !== actual) {
-            cambios[col.name] = actual;
-            hayCambios = true;
-          }
-        }
-      });
-
-      if (hayCambios) {
-        registrosModificados.set(rowKey, cambios);
-        row.style.backgroundColor = 'rgba(255, 215, 0, 0.1)';
-      } else {
-        registrosModificados.delete(rowKey);
-        row.style.backgroundColor = 'transparent';
-      }
-    }
-
-    async function guardarRegistro(rowKey, nombreTabla) {
+    async function crearUsuario() {
       try {
-        const row = document.getElementById(rowKey);
-        if (!row) throw new Error("Fila no encontrada");
+        const nombre = document.getElementById("nombre").value.trim();
+        const apellido = document.getElementById("apellido").value.trim();
+        const correo = document.getElementById("correoNuevo").value.trim();
+        const contrasena = document.getElementById("contrasenaNueva").value.trim();
+        const permiso_carga = document.getElementById("permisoCarga").checked;
+        const permiso_stop = document.getElementById("permisoStop").checked;
 
-        const cambios = {};
-        const whereClause = {};
-
-        columnasTablaActual.forEach(col => {
-          const input = document.getElementById(`${rowKey}_${col.name}`);
-          if (input) {
-            const original = input.dataset.original;
-            const actual = input.value;
-
-            if (original !== actual) {
-              cambios[col.name] = actual;
-            }
-
-            // Identificar la fila con todos los valores originales
-            whereClause[col.name] = original;
-          }
-        });
-
-        if (Object.keys(cambios).length === 0) {
-          alert('No hay cambios para guardar');
+        if (!nombre || !apellido || !correo || !contrasena) {
+          alert("Completa todos los campos");
           return;
         }
 
-        const payload = { ...cambios, _where: whereClause };
-
-        const res = await fetch(`${API_BASE}/api/tabla/actualizar/${encodeURIComponent(nombreTabla)}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+        const response = await fetch("http://127.0.0.1:5000/api/usuarios", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            nombre,
+            apellido,
+            correo,
+            contrasena,
+            permiso_carga,
+            permiso_stop
+          })
         });
 
-        const json = await res.json();
+        const result = await response.json();
 
-        if (!res.ok || !json.ok) {
-          throw new Error(json.error || "Error al guardar");
+        if (!response.ok || !result.ok) {
+          alert("Error: " + (result.error || "No se pudo guardar"));
+          return;
         }
+        
 
-        alert('✅ Registro actualizado exitosamente');
-        registrosModificados.delete(rowKey);
-        row.style.backgroundColor = 'transparent';
+        alert("Usuario creado correctamente 🎉");
 
-        columnasTablaActual.forEach(col => {
-          const input = document.getElementById(`${rowKey}_${col.name}`);
-          if (input) {
-            input.dataset.original = input.value;
-          }
-        });
 
-      } catch (err) {
-        alert('❌ Error: ' + err.message);
+        // 🧹 limpiar campos
+        document.getElementById("nombre").value = "";
+        document.getElementById("apellido").value = "";
+        document.getElementById("correoNuevo").value = "";
+        document.getElementById("contrasenaNueva").value = "";
+
+        cerrarCrearUsuario();
+
+      } catch (error) {
+        console.error(error);
+        alert("Error de conexión con el servidor");
+      }
+    }
+    function abrirCrearUsuario() {
+      const modal = document.getElementById("modalCrearUsuario");
+      if (modal) {
+        modal.style.display = "flex";
+      } else {
+        console.error("No existe modalCrearUsuario");
+      }
+    }
+    function aplicarPermisos(usuario) {
+      const esAdmin = usuario.nombre === "Mario";
+
+      const btnCarga = document.querySelector('button[data-tab="carga"]');
+      const btnStop = document.querySelector('button[data-tab="stop"]');
+      const btnCrearUsuario = document.getElementById("btnCrearUsuario");
+
+      if (btnCrearUsuario) {
+        btnCrearUsuario.style.display = esAdmin ? "block" : "none";
+      }
+
+      if (btnCarga) {
+        btnCarga.style.display = esAdmin || usuario.permiso_carga ? "block" : "none";
+      }
+
+      if (btnStop) {
+        btnStop.style.display = esAdmin || usuario.permiso_stop ? "block" : "none";
       }
     }
 
-    async function eliminarRegistro(rowKey, nombreTabla) {
-      if (!confirm('¿Estás seguro de que deseas eliminar este registro?')) {
-        return;
+    function cerrarCrearUsuario() {
+      const modal = document.getElementById("modalCrearUsuario");
+      if (modal) {
+        modal.style.display = "none";
       }
-
-      try {
-        const whereClause = {};
-
-        columnasTablaActual.forEach(col => {
-          const input = document.getElementById(`${rowKey}_${col.name}`);
-          if (input) {
-            whereClause[col.name] = input.dataset.original;
-          }
-        });
-
-        const res = await fetch(`${API_BASE}/api/tabla/eliminar/${encodeURIComponent(nombreTabla)}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ _where: whereClause })
-        });
-
-        const json = await res.json();
-
-        if (!res.ok || !json.ok) {
-          throw new Error(json.error || "Error al eliminar");
-        }
-
-        alert('✅ Registro eliminado exitosamente');
-        cargarDatosTabla(nombreTabla, paginaActual);
-
-      } catch (err) {
-        alert('❌ Error: ' + err.message);
-      }
-    }
-
-    function toggleSelectAll(checkbox) {
-      const checkboxes = document.querySelectorAll('.row-select');
-      checkboxes.forEach(cb => cb.checked = checkbox.checked);
-    }
-
-    
-    const btnRecargarTablas = document.getElementById('btnRecargarTablas');
-    if (btnRecargarTablas) {
-      btnRecargarTablas.addEventListener('click', cargarListaTablas);
     }
   </script>
 
