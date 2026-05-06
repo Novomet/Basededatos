@@ -25,12 +25,7 @@ load_dotenv()  # ✅ Carga el .env al iniciar
 app = Flask(__name__)
 
 # ✅ Permite peticiones desde Live Server (5500) y cualquier origen local
-CORS(app, origins=[
-    "http://127.0.0.1:5500",
-    "http://localhost:5500",
-    "http://127.0.0.1:5000",
-    "http://localhost:5000",
-])
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -4373,7 +4368,8 @@ def descargar_reporte_pec():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
 
 
 
