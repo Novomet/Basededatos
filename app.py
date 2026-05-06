@@ -23,6 +23,9 @@ from openpyxl.utils import get_column_letter
 load_dotenv()  # ✅ Carga el .env al iniciar
 
 app = Flask(__name__)
+@app.route("/logo.png")
+def logo():
+    return send_file("logo.png", mimetype="image/png")
 @app.route("/")
 def home():
     return send_file("index.html")
