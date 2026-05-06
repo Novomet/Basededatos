@@ -25,10 +25,7 @@ load_dotenv()  # ✅ Carga el .env al iniciar
 app = Flask(__name__)
 @app.route("/")
 def home():
-    return jsonify({
-        "ok": True,
-        "message": "Backend Well Controller activo"
-    })
+    return send_file("index.html")
 
 # ✅ Permite peticiones desde Live Server (5500) y cualquier origen local
 CORS(app, resources={r"/*": {"origins": "*"}})
