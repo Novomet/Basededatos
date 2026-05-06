@@ -49,22 +49,7 @@ def get_supabase():
         raise RuntimeError("Faltan SUPABASE_URL o SUPABASE_API_KEY en el .env")
     return create_client(url, key)
 
-def registrar_historial_subida(sb, pozo=None, no_instalacion=None, tipo=None, usuario=None, archivo=None, estado="OK", detalle=None):
-    try:
-        payload = {
-            "pozo": pozo,
-            "no_instalacion": str(no_instalacion) if no_instalacion is not None else None,
-            "tipo": tipo,
-            "usuario": usuario,
-            "archivo": archivo,
-            "estado": estado,
-            "detalle": detalle,
-        }
 
-        sb.table("historial_subidas").insert(payload).execute()
-
-    except Exception as e:
-        logger.warning(f"No se pudo registrar historial: {e}")
 
 
 @app.route("/api/historial-subidas", methods=["GET"])
@@ -644,16 +629,7 @@ def health():
 
 @app.route("/api/importar/requisicion-bienes", methods=["POST"])
 def importar_requisicion_bienes():
-    registrar_historial_subida(
-        sb,
-        pozo=pozo_val,
-        no_instalacion=no_instalacion,
-        tipo="Requisición de Bienes",
-        usuario=request.form.get("usuario"),
-        archivo=uploaded.filename,
-        estado="OK",
-        detalle="Importación finalizada"
-    )
+
     try:
         uploaded = request.files.get("file") or request.files.get("archivo")
         if not uploaded:
@@ -1699,16 +1675,7 @@ def cliente_pull():
 # ══════════════════════════════════════════════
 @app.route("/api/importar/reporte-pulling", methods=["POST"])
 def importar_reporte_pulling():
-    registrar_historial_subida(
-        sb,
-        pozo=pozo_id,
-        no_instalacion=selected_no_inst_payload,
-        tipo="Reporte de Pulling",
-        usuario=request.form.get("usuario"),
-        archivo=uploaded.filename,
-        estado="OK",
-        detalle="Importación finalizada"
-    )
+
 
     try:
         uploaded = request.files.get("file") or request.files.get("archivo")
