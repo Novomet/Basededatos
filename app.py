@@ -23,6 +23,12 @@ from openpyxl.utils import get_column_letter
 load_dotenv()  # ✅ Carga el .env al iniciar
 
 app = Flask(__name__)
+@app.route("/")
+def home():
+    return jsonify({
+        "ok": True,
+        "message": "Backend Well Controller activo"
+    })
 
 # ✅ Permite peticiones desde Live Server (5500) y cualquier origen local
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -61,7 +67,7 @@ def registrar_historial_subida(sb, pozo=None, no_instalacion=None, tipo=None, us
         logger.warning(f"No se pudo registrar historial: {e}")
 
 
-@app.route("/api/historial-subidas", methods=["GET"])
+@("/api/historial-subidas", methods=["GET"])
 def listar_historial_subidas():
     try:
         sb = get_supabase()
