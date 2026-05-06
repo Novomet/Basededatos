@@ -35,6 +35,14 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+@app.errorhandler(Exception)
+def manejar_error_global(e):
+    logger.error("ERROR GLOBAL:\n%s", traceback.format_exc())
+    return jsonify({
+        "ok": False,
+        "error": str(e),
+        "traceback": traceback.format_exc()
+    }), 500
 
 
 # ══════════════════════════════════════════════
