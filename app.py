@@ -1612,13 +1612,13 @@ def importar_reporte_instalacion():
         }), (200 if total_inserted > 0 else 500)
 
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-# ══════════════════════════════════════════════
-# CLIENTE_INSTALACION
-# ══════════════════════════════════════════════
-
+        logger.error("ERROR REPORTE INSTALACION:\n%s", traceback.format_exc())
+    
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
 @app.route("/api/cliente_instalacion", methods=["GET"])
 def cliente_instalacion():
     try:
