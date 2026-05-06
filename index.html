@@ -1853,50 +1853,47 @@ const labels = {
       const nombre = document.getElementById("loginUser").value.trim();
       const contrasena = document.getElementById("loginPass").value.trim();
       const loginError = document.getElementById("loginError");
-
+    
       loginError.style.display = "none";
-
-      // Validación básica
+    
       if (!nombre || !contrasena) {
         loginError.innerText = "Ingrese usuario y contraseña";
         loginError.style.display = "block";
         return;
       }
-
-      const response = await fetch(`${API_BASE}/api/login`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          nombre: nombre,
-          contrasena: contrasena
-        })
-      });
-      
-      const result = await response.json();
-
+    
+      try {
+        const response = await fetch(`${API_BASE}/api/login`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            nombre: nombre,
+            contrasena: contrasena
+          })
+        });
+    
+        const result = await response.json();
+    
         if (!response.ok || !result.ok) {
           loginError.innerText = result.error || "Credenciales incorrectas";
           loginError.style.display = "block";
           return;
         }
-
+    
         if (result.usuario.nombre === "Mario") {
           document.getElementById("btnCrearUsuario").style.display = "block";
         } else {
           document.getElementById("btnCrearUsuario").style.display = "none";
         }
-
-        // 👇 Ocultar pantalla de login
+    
         document.getElementById("loginScreen").style.display = "none";
-
-        // 👇 Mostrar sistema
         document.querySelector(".layout").style.display = "grid";
+    
         aplicarPermisos(result.usuario);
         inicializarDatos();
-
-
+    
       } catch (error) {
         console.error(error);
         loginError.innerText = "Error de conexión con el servidor";
@@ -3151,7 +3148,7 @@ if (btnReportePEC) {
           return;
         }
 
-        const response = await fetch("http://127.0.0.1:5000/api/usuarios", {
+        const response = await fetch(`${API_BASE}/api/usuarios`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json"
