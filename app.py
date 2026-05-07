@@ -844,34 +844,23 @@ def crear_usuario():
             "error": str(e)
         }), 500
 @app.route("/api/importar/reporte-instalacion", methods=["POST"])
-def importar_reporte_instalacion():
-
+def importar_reporte_instalacion():  
+   
     try:
         uploaded = request.files.get("file") or request.files.get("archivo")
-
         if not uploaded:
-            return jsonify({
-                "ok": False,
-                "error": "No se envió archivo (use file o archivo)"
-            }), 400
+            return jsonify({"ok": False, "error": "No se envió archivo (use file o archivo)"}), 400
 
         if not uploaded.filename:
-            return jsonify({
-                "ok": False,
-                "error": "Archivo vacío"
-            }), 400
+            return jsonify({"ok": False, "error": "Archivo vacío"}), 400
 
         filename = uploaded.filename.lower()
-
         if not (filename.endswith(".xlsx") or filename.endswith(".xlsm")):
-            return jsonify({
-                "ok": False,
-                "error": "Solo se permiten archivos .xlsx o .xlsm"
-            }), 400
+            return jsonify({"ok": False, "error": "Solo se permiten archivos .xlsx o .xlsm"}), 400
 
         sb = get_supabase()
 
-
+        
         # Leer Excel desde memoria
         file_bytes = uploaded.read()
         wb = load_workbook(filename=BytesIO(file_bytes), data_only=True)
@@ -1609,6 +1598,21 @@ def importar_reporte_instalacion():
         total_inserted = sum(inserted.values())
         status_ok      = len(warnings) == 0 and total_inserted > 0
 
+        try:
+            registrar_historial_subida(
+                sb,
+                pozo=pozo_id,
+                no_instalacion=instalacion_num,
+                tipo="Reporte de Instalación",
+                usuario=request.form.get("usuario"),
+                archivo=uploaded.filename,
+                estado="OK" if status_ok else "ADVERTENCIAS",
+                detalle="Importación finalizada" if status_ok else "Importación finalizada con advertencias",
+            )
+        except Exception as e_hist:
+            warnings.append({"tabla": "HISTORIAL", "error": str(e_hist)})
+
+
         return jsonify({
             "ok": status_ok,
             "message": "Importación finalizada" if status_ok else "Importación finalizada con advertencias",
@@ -1618,17 +1622,11 @@ def importar_reporte_instalacion():
             "inserted": inserted,
             "total_inserted": total_inserted,
             "warnings": warnings,
-            
+            "debug_steps": debug_steps,
         }), (200 if total_inserted > 0 else 500)
 
     except Exception as e:
-        logger.error("ERROR REPORTE INSTALACION:\n%s", traceback.format_exc())
-    
-        return jsonify({
-            "ok": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }), 500
+        return jsonify({"ok": False, "error": str(e)}), 500
 @app.route("/api/cliente_instalacion", methods=["GET"])
 def cliente_instalacion():
     try:
